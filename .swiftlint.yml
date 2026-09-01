@@ -1,0 +1,97 @@
+# OneTake SwiftLint — modern Swift & SwiftUI best practices
+# See guide: linters, formatters, and coding best practices for modern Swift
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - force_unwrapping
+  - force_cast
+  - force_try
+  - fatal_error_message
+  - redundant_nil_coalescing
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - closure_spacing
+  - collection_alignment
+  - discouraged_object_literal
+  - discouraged_optional_boolean
+  - explicit_init
+  - overridden_super_call
+  - redundant_objc_attribute
+  - discouraged_direct_init
+  - attributes
+  - closure_end_indentation
+
+disabled_rules:
+  - trailing_whitespace
+  - trailing_comma
+  - blanket_disable_command
+  - superfluous_disable_command
+  - large_tuple
+
+# Line & File Length Limits — tuned for feature-rich SwiftUI views (ReviewView 652, StudioView 450)
+line_length:
+  warning: 140
+  error: 180
+  ignores_function_declarations: true
+  ignores_comments: true
+  ignores_urls: true
+
+file_length:
+  warning: 700
+  error: 900
+
+function_body_length:
+  warning: 85
+  error: 150
+
+type_body_length:
+  warning: 650
+  error: 800
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+# Naming — allow idiomatic single-letter closure params (i for index, t for take, s for script, etc.)
+identifier_name:
+  min_length: 2
+  max_length: 50
+  excluded: [id, x, y, i, j, k, t, s, v, r, g, e, d, c, a, m, q, o, f, w, h, p, n, e, s]
+
+type_name:
+  min_length: 3
+  max_length: 50
+
+# Force unwrapping is banned — use guard let / if let
+force_unwrapping: error
+force_cast: error
+force_try: error
+
+# Excluded paths
+excluded:
+  - Pods
+  - .build
+  - DerivedData
+  - OneTakeTests
+  - OneTakeUITests
+  - .swiftlint.yml
+
+# Custom: prefer @Observable over ObservableObject
+custom_rules:
+  prefer_observable:
+    name: "Prefer @Observable"
+    regex: "ObservableObject"
+    message: "Use @Observable macro (field-level tracking) instead of ObservableObject. See best practices guide."
+    severity: warning
+  avoid_anyview:
+    name: "Avoid AnyView"
+    regex: "AnyView"
+    message: "Avoid AnyView — it destroys SwiftUI diffing. Use @ViewBuilder instead."
+    severity: error
+  avoid_helper_func_view:
+    name: "Avoid helper func -> some View"
+    regex: "func\\s+\\w+\\(.*\\)\\s*->\\s*some\\s+View"
+    message: "Extract subviews as `struct Foo: View` instead of helper methods for diffing."
+    severity: warning

@@ -1,0 +1,44 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "solid" : "display-p3:0.95898,0.81055,0.27539,1.00000"
+  },
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : 0.5,
+      "layers" : [
+        {
+          "blend-mode" : "darken",
+          "fill" : "automatic",
+          "glass" : true,
+          "image-name" : "export-2026-09-01 124213 2.svg",
+          "name" : "export-2026-09-01 124213 2"
+        },
+        {
+          "image-name" : "export-2026-09-01 124213 3.svg",
+          "name" : "export-2026-09-01 124213 3"
+        },
+        {
+          "image-name" : "export-2026-09-01 124213 4.svg",
+          "name" : "export-2026-09-01 124213 4"
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 1
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.16
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "iOS"
+    ]
+  }
+}

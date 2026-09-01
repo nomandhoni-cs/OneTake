@@ -1,0 +1,13 @@
+--swiftversion 5.9
+--indent 4
+--tabwidth 4
+--maxwidth 140
+--wraparguments before-first
+--wrapcollections before-first
+--closingparen balanced
+--commas always
+--trimwhitespace always
+--stripunusedargs closure-only
+--importgrouping alpha
+--self remove
+--header ignore
