@@ -4,7 +4,7 @@
 TBD - created by archiving change modern-apple-api-features. Update Purpose after archive.
 ## Requirements
 ### Requirement: Hardware capture session with resolution and frame rate selection
-The system SHALL provide a front-camera `AVCaptureSession` supporting exact resolution selection of 1080p FHD (1920×1080) and 4K UHD (3840×2160) at 24 fps (Film), 30 fps (Standard), and 60 fps (Smooth), configured via `AVCaptureDevice.Format` and `activeVideoMin/MaxFrameDuration`.
+The system SHALL provide a front-camera `AVCaptureSession` supporting exact resolution selection of 1080p FHD (1920×1080) and 4K UHD (3840×2160) at 24 fps (Film), 30 fps (Standard), and 60 fps (Smooth), configured via `AVCaptureDevice.Format` and `activeVideoMin/MaxFrameDuration`. Camera format controls (resolution / frame rate / HDR) SHALL be presented only in the Studio settings bottom sheet; when recording or paused those controls SHALL be disabled with an explanatory caption ("Stop recording to change camera format"), while mirror / aspect / countdown toggles remain live; unsupported combinations SHALL be disabled with an explanatory label.
 
 #### Scenario: User selects 1080p 30 fps
 - **WHEN** user selects 1080p at 30 fps in settings or studio
@@ -21,6 +21,10 @@ The system SHALL provide a front-camera `AVCaptureSession` supporting exact reso
 #### Scenario: Graceful handling of denied permission
 - **WHEN** camera or microphone permission is denied
 - **THEN** the studio shows a `ContentUnavailableView` with a button linking to Settings and does not crash
+
+#### Scenario: Settings sheet disabled while recording
+- **WHEN** recording or paused and the user opens the settings bottom sheet
+- **THEN** resolution, frame rate, and HDR rows are disabled with caption "Stop recording to change camera format" and tapping them has no effect
 
 ### Requirement: Native HDR and Dolby Vision support
 The system SHALL enable native HDR / Dolby Vision capture where the device supports `isVideoHDREnabled`.
@@ -45,7 +49,7 @@ The system SHALL freeze Auto-Exposure (AE), Auto White Balance (AWB), and Auto-F
 - **THEN** the system restores `exposureMode = .continuousAutoExposure`, `whiteBalanceMode = .continuousAutoWhiteBalance`, `focusMode = .continuousAutoFocus` (or device defaults)
 
 ### Requirement: Mirrored preview and session lifecycle
-The system SHALL support mirrored front-camera preview toggling and correctly handle session lifecycle across interruptions and backgrounding.
+The system SHALL support mirrored front-camera preview toggling and correctly handle session lifecycle across interruptions and backgrounding. Preview mirroring SHALL be toggleable live from the settings sheet. If the app backgrounds while recording, the system SHALL finalize the file; if backgrounds while paused, the system SHALL also auto-finalize (stop) to avoid a corrupted segment; interruption (phone call) SHALL pause or stop gracefully.
 
 #### Scenario: Mirror toggle
 - **WHEN** user toggles Mirror Preview
@@ -59,3 +63,17 @@ The system SHALL support mirrored front-camera preview toggling and correctly ha
 - **WHEN** user backgrounds the app while recording
 - **THEN** the system stops recording, finalizes the file, and does not leave a corrupted MP4
 
+#### Scenario: Backgrounding while paused finalizes
+- **WHEN** user backgrounds the app while paused
+- **THEN** the system finalizes the current take file immediately, clears paused state, and does not leave orphan segment files
+
+### Requirement: Pause and resume segment handling
+The system SHALL support pause/resume for `AVCaptureMovieFileOutput` using `pauseRecording`/`resumeRecording` when available (iOS 18.6) and fall back to sequential segment files merged via `AVMutableComposition` on Stop if those selectors are unavailable; the merged result SHALL be a single MP4 file with no orphan segments on success, and failure SHALL retain segments and surface an error without data loss.
+
+#### Scenario: Pause and resume produce single file
+- **WHEN** the user records, pauses, resumes, then stops
+- **THEN** the resulting Take file is a single MP4 containing the concatenated content and temporary segments are deleted
+
+#### Scenario: Fallback segment merge on old OS
+- **WHEN** `pauseRecording` is unavailable and the user pauses then resumes
+- **THEN** the system records to sequential segment files and on Stop merges them into one MP4 via composition
