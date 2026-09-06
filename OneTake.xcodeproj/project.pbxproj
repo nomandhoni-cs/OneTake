@@ -23,6 +23,17 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXBuildFile section */
+		AA2000010000000000000001 /* RevenueCat in Frameworks */ = {
+			isa = PBXBuildFile;
+			productRef = AA2000010000000000000003 /* RevenueCat */;
+		};
+		AA2000010000000000000004 /* RevenueCat in Frameworks */ = {
+			isa = PBXBuildFile;
+			productRef = AA2000010000000000000003 /* RevenueCat */;
+		};
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		977F20783046DB6F003B311A /* OneTake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OneTake.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		977F20873046DB6F003B311A /* OneTakeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OneTakeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,6 +76,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA2000010000000000000001 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,6 +84,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA2000010000000000000004 /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +139,7 @@
 			);
 			name = OneTake;
 			packageProductDependencies = (
+				AA2000010000000000000003 /* RevenueCat */,
 			);
 			productName = OneTake;
 			productReference = 977F20783046DB6F003B311A /* OneTake.app */;
@@ -149,6 +163,7 @@
 			);
 			name = OneTakeTests;
 			packageProductDependencies = (
+				AA2000010000000000000003 /* RevenueCat */,
 			);
 			productName = OneTakeTests;
 			productReference = 977F20873046DB6F003B311A /* OneTakeTests.xctest */;
@@ -209,6 +224,9 @@
 			);
 			mainGroup = 977F206F3046DB6F003B311A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AA2000010000000000000002 /* XCRemoteSwiftPackageReference "purchases-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 977F20793046DB6F003B311A /* Products */;
 			projectDirPath = "";
@@ -627,6 +645,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA2000010000000000000002 /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.88.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA2000010000000000000003 /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA2000010000000000000002 /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 977F20703046DB6F003B311A /* Project object */;
 }

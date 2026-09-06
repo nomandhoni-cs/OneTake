@@ -6,7 +6,10 @@ struct TrimScrubberView: View {
     var duration: Double // seconds
     @Binding var startSeconds: Double
     @Binding var endSeconds: Double // inclusive end
-    var bladeCuts: [Double] = []
+    /// UI-trim-clipped source ranges to render (caller clips via
+    /// `rangesClippedTo`). Gaps between ranges render as empty track —
+    /// deleted footage is visibly gone, not silently kept.
+    var segments: [BladeSegment] = []
     var selectedSegment: Int?
     var playheadSeconds: Double?
     var onBlade: (() -> Void)?
@@ -15,21 +18,13 @@ struct TrimScrubberView: View {
 
     private let minDuration: Double = 1.0
 
-    private var normalizedCuts: [Double] {
-        let s = startSeconds
-        let e = endSeconds
-        return bladeCuts.filter { $0 > s + 0.1 && $0 < e - 0.1 }.sorted()
+    /// Internal boundaries between adjacent spans (divider positions).
+    private var dividers: [Double] {
+        segments.sorted { $0.start < $1.start }.dropFirst().map(\.start)
     }
 
-    private var segments: [(start: Double, end: Double)] {
-        var segs: [(Double, Double)] = []
-        var prev = startSeconds
-        for cut in normalizedCuts {
-            segs.append((prev, cut))
-            prev = cut
-        }
-        segs.append((prev, endSeconds))
-        return segs
+    private var orderedSegments: [BladeSegment] {
+        segments.sorted { $0.start < $1.start }
     }
 
     private var isBladeDisabled: Bool {
@@ -44,7 +39,7 @@ struct TrimScrubberView: View {
     private var isDeleteDisabled: Bool {
         guard onDeleteSegment != nil else { return true }
         guard let sel = selectedSegment else { return true }
-        return segments.count <= 1 || sel < 0 || sel >= segments.count
+        return orderedSegments.count <= 1 || sel < 0 || sel >= orderedSegments.count
     }
 
     var body: some View {
@@ -65,20 +60,28 @@ struct TrimScrubberView: View {
                         .frame(width: selectedW, height: 44)
                         .offset(x: startX)
 
-                    // Segment selection highlight
-                    ForEach(Array(segments.enumerated()), id: \.offset) { idx, seg in
+                    // Surviving spans at source positions; deleted gaps stay empty.
+                    ForEach(Array(orderedSegments.enumerated()), id: \.offset) { idx, seg in
                         let segX = CGFloat(seg.start / duration) * w
-                        let segW = CGFloat((seg.end - seg.start) / duration) * w
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(selectedSegment == idx ? Color.yellow : Color.clear, lineWidth: 2)
-                            .frame(width: segW, height: 44)
-                            .offset(x: segX)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onSelectSegment?(idx) }
+                        let segW = CGFloat(seg.duration / duration) * w
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.1))
+                                .strokeBorder(selectedSegment == idx ? Color.yellow : Color.clear, lineWidth: 2)
+                            if segW > 48 {
+                                Text(format(seconds: seg.duration))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.75))
+                            }
+                        }
+                        .frame(width: segW, height: 44)
+                        .offset(x: segX)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onSelectSegment?(idx) }
                     }
 
-                    // Blade cut dividers
-                    ForEach(normalizedCuts, id: \.self) { cut in
+                    // Blade cut dividers at internal boundaries
+                    ForEach(dividers, id: \.self) { cut in
                         let x = CGFloat(cut / duration) * w
                         Rectangle()
                             .fill(Color.white)
@@ -87,9 +90,12 @@ struct TrimScrubberView: View {
                             .shadow(color: .black.opacity(0.35), radius: 2)
                     }
 
-                    // Playhead
+                    // Playhead, clamped clear of both trim handles
                     if let playhead = playheadSeconds {
-                        let px = CGFloat(playhead / duration) * w
+                        let rawX = CGFloat(playhead / duration) * w
+                        let lower = min(startX + 13, endX)
+                        let upper = max(endX - 13, startX)
+                        let px = min(max(rawX, lower), upper)
                         Rectangle().fill(Color.yellow).frame(width: 2, height: 44).offset(x: px - 1)
                     }
 
@@ -148,8 +154,8 @@ struct TrimScrubberView: View {
                         .disabled(isDeleteDisabled)
                     }
                     Spacer()
-                    if let sel = selectedSegment, sel < segments.count {
-                        Text("Segment \(sel + 1)/\(segments.count) • \(format(seconds: segments[sel].end - segments[sel].start))")
+                    if let sel = selectedSegment, sel < orderedSegments.count {
+                        Text("Segment \(sel + 1)/\(orderedSegments.count) • \(format(seconds: orderedSegments[sel].duration))")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }
@@ -189,7 +195,7 @@ private struct TrimHandle: View {
             duration: 30,
             startSeconds: $s,
             endSeconds: $e,
-            bladeCuts: [8, 15],
+            segments: [BladeSegment(start: 2, duration: 6), BladeSegment(start: 8, duration: 7), BladeSegment(start: 15, duration: 13)],
             selectedSegment: 1,
             playheadSeconds: 10,
             onBlade: {},

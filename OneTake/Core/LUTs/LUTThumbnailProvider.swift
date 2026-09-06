@@ -46,7 +46,7 @@ enum LUTCubeThumbnailProvider {
         let image: CGImage? = if preset == .natural {
             renderNeutral()
         } else if let data = LUTCubeLoader.data(for: preset),
-                  let filtered = filteredGradient(using: data)
+                  let filtered = filteredGradient(using: data, dimension: LUTCubeLoader.dimension(for: preset))
         // swiftlint:disable:next opening_brace
         {
             filtered
@@ -83,11 +83,11 @@ enum LUTCubeThumbnailProvider {
         return (filter?.outputImage?.cropped(to: rect)) ?? CIImage(color: CIColor.gray).cropped(to: rect)
     }
 
-    private static func filteredGradient(using cubeData: Data) -> CGImage? {
+    private static func filteredGradient(using cubeData: Data, dimension: Int) -> CGImage? {
         let base = baseGradient()
         guard let filter = CIFilter(name: "CIColorCube") else { return nil }
         filter.setValue(base, forKey: kCIInputImageKey)
-        filter.setValue(Float(LUTCubeLoader.cubeDimension), forKey: "inputCubeDimension")
+        filter.setValue(Float(dimension), forKey: "inputCubeDimension")
         filter.setValue(cubeData, forKey: "inputCubeData")
         guard let output = filter.outputImage?.cropped(to: base.extent) else { return nil }
         return ciContext.createCGImage(output, from: output.extent)
@@ -106,6 +106,12 @@ enum LUTCubeThumbnailProvider {
         case .warmStudio: CIColor(red: 0.85, green: 0.65, blue: 0.35)
         case .cinematicContrast: CIColor(red: 0.35, green: 0.35, blue: 0.45)
         case .cleanMonochrome: CIColor(red: 0.5, green: 0.5, blue: 0.5)
+        case .goldenHour: CIColor(red: 0.95, green: 0.7, blue: 0.4)
+        case .tealOrange: CIColor(red: 0.3, green: 0.6, blue: 0.65)
+        case .fadedFilm: CIColor(red: 0.7, green: 0.68, blue: 0.62)
+        case .noir: CIColor(red: 0.25, green: 0.25, blue: 0.28)
+        case .vibrantPop: CIColor(red: 0.9, green: 0.4, blue: 0.55)
+        case .coolMorning: CIColor(red: 0.55, green: 0.7, blue: 0.85)
         default: CIColor(red: 0.6, green: 0.6, blue: 0.6)
         }
         let base = CIImage(color: color).cropped(to: rect)
@@ -116,6 +122,10 @@ enum LUTCubeThumbnailProvider {
 /// Reusable 40×24 swatch view with cached async loading.
 struct LUTSwatchView: View {
     let preset: LUTPreset
+    /// Tile height; pair with `fillsWidth` for grid tiles.
+    var height: CGFloat = 24
+    /// Stretch to the container width (grid tiles); default keeps the 40pt chip.
+    var fillsWidth = false
     @State private var cgImage: CGImage?
 
     var body: some View {
@@ -123,14 +133,16 @@ struct LUTSwatchView: View {
             if let cgImage {
                 Image(decorative: cgImage, scale: 2, orientation: .up)
                     .resizable()
-                    .frame(width: 40, height: 24)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                    .frame(height: height)
+                    .frame(maxWidth: fillsWidth ? .infinity : 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
             } else {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(Color.gray.opacity(0.25))
-                    .frame(width: 40, height: 24)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                    .frame(height: height)
+                    .frame(maxWidth: fillsWidth ? .infinity : 40)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
             }
         }
         .task(id: preset.rawValue) {

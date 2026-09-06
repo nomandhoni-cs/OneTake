@@ -120,20 +120,22 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
     var createdAt: Date
     var duration: TimeInterval
     var trimStartSeconds, trimDurationSeconds: Double?
-    var bladeCuts: [Double]?        // sorted seconds, optional — nil = single segment
+    var bladeCuts: [Double]?        // DERIVED internal boundaries (kept in sync, not source of truth)
+    var segmentsJSON: String?       // BladeSegment [{start,duration}] — source of truth (additive, lightweight)
     var lutPreset: String           // LUTPreset.rawValue
     var isReaction: Bool = false    // Reaction Studio composite (additive, default false)
     var backgroundAssetLocalID: String? // Photos ID of BG media (metadata only)
     var script: Script?
     var fileURL: URL { /* relative → absolute */ }
     var trimRange: CMTimeRange? { /* Double ↔ CMTime */ }
-    // Blade helpers:
-    // normalizedBladeCuts, bladeSegments() -> [CMTimeRange], bladeEffectiveDuration, prunedBladeCuts()
+    // Blade helpers (all go through segments; cuts are re-synced):
+    // split(at:) -> Int?, deleteSegment(at:) -> Bool, rangesClippedTo/clipSegments(start:end:),
+    // unclippedRanges(), syncCutsFromSegments(), bladeSegments() -> [CMTimeRange], bladeEffectiveDuration
 }
 ```
 
 - `Take.relativeFilePath` survives app updates (container URL changes).
-- `Take.bladeCuts` is the blade feature's lightweight model: optional `[Double]` (additive, so lightweight migration), sorted, deduped within 0.1s, clamped to `trimRange`. `bladeSegments()` derives `[CMTimeRange]` for composition.
+- `Take.segmentsJSON` is the blade feature's model: `BladeSegment {start, duration}` ranges (`String`-encoded JSON — SwiftData transformables only support plist values, so custom struct arrays persist as a JSON string; additive Optional, lightweight migration). Deletion IS compaction — kept ranges are the timeline. `bladeCuts` is re-derived via `syncCutsFromSegments()` for legacy readers. `bladeSegments()` prefers stored ranges (clipped to trim) with legacy cut-derivation fallback, and feeds `[CMTimeRange]` to composition.
 - `Take.isReaction` / `backgroundAssetLocalID` follow the same additive pattern (defaults `false`/`nil`) — old stores migrate lightly; the composited MP4 is self-contained and flows through blade/trim/LUT/export unchanged.
 - `Script.displayTitle` helpers, `ScriptCategory` curated icons (`CategoryStyle` in `ScriptCategoryViews.swift`).
 
@@ -154,7 +156,7 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 - `grouped` by day (`Today`/`Yesterday`/date) via `Dictionary(grouping:)` + sorted keys
 - Row: `MyTakesRow` (thumbnail placeholder, title, `clock` duration, `Trimmed`/`LUT`/`Reaction` badges, file-missing capsule)
 - **Swipe:** trailing Delete (destructive → `confirmationDialog`), leading Edit → `Route.review`
-- **Context menu (grouped):** `Section("Adjust")` Trim (push Review), Blade Split at mid, Delete Last Segment; `Section("Color")` LUT submenu with `LUTSwatchView`; `Section("Output")` Share + Delete Take. Same grouping is mirrored in Review's toolbar.
+- **Context menu (grouped):** `Section("Adjust")` Trim (push Review), Blade Split at Middle (trim-aware), `Section("Color")` LUT submenu with `LUTSwatchView` + haptic; `Section("Output")` Share (file-exists cache); `Section("Destructive")` Delete Last Segment (confirmed) + Delete Take. Same grouping is mirrored in Review's toolbar.
 - Blade helpers: `bladeSplitTake(_:)` (mid of trim), `deleteLastBladeSegment(of:)` — mutate `take.bladeCuts` and `modelContext.save()`.
 
 ### `Features/Workspace/` — Scripts library + editor + categories
@@ -180,9 +182,9 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 
 | File | Role |
 |------|------|
-| `ReviewView.swift` (590 lines, `// swiftlint:disable file_length` — tracked tech debt) | `ScrollView` with `playerSection` (`VideoPlayer` with blade-aware `makePlayerItem` composition), `trimSection` (`TrimScrubberView` + preview + undo), `lutSection` (now **swatch buttons** with `LUTSwatchView` + checkmark, not segmented picker), `actionsSection` (Save as New / Replace / Save to Photos + `ShareLink`). State: `player`, `duration`, `trimStart/End`, `selectedLUT`, `selectedSegment`, `playheadSeconds` (polled `player.currentTime()`), `bladeUndoStack`. Helpers: `splitAtPlayhead()`, `deleteSelectedSegment()`, `pruneBladeCutsToTrim()`, `undoLastBlade()`, `loadDuration()`, `makePlayerItem(for:)` (composition when `bladeSegments.count>1`), `reexport(saveAsNew:)` and `exportAndSave()` (both **blade-aware** via transient `Take` + `ExportService.exportTake`). Toolbar ellipsis `Menu` with **3 sections** ("Adjust" Trim/Blade/Delete, "Color" LUT submenu with swatches, "Output" Save/Share) and disabled states. |
+| `ReviewView.swift` (590 lines, `// swiftlint:disable file_length` — tracked tech debt) | `ScrollView` with `playerSection` (`VideoPlayer` with blade-aware `makePlayerItem` composition), `trimSection` (`TrimScrubberView` + preview + undo), `lutSection` (now a **2-column swatch tile grid** with `LUTSwatchView` tiles + checkmark, not a row list), `actionsSection` (Save as New / Replace / Save to Photos + `ShareLink`). State: `player`, `duration`, `trimStart/End`, `selectedLUT`, `selectedSegment`, `playheadSeconds` (polled `player.currentTime()`), `bladeUndoStack`. Helpers: `splitAtPlayhead()`, `deleteSelectedSegment()`, `pruneBladeCutsToTrim()`, `undoLastBlade()`, `loadDuration()`, `makePlayerItem(for:)` (composition when `bladeSegments.count>1`), `reexport(saveAsNew:)` and `exportAndSave()` (both **blade-aware** via transient `Take` + `ExportService.exportTake`). Toolbar ellipsis `Menu` with **3 sections** ("Adjust" Trim/Blade/Delete, "Color" LUT submenu with swatches, "Output" Save/Share) and disabled states. |
 | `TrimScrubberView.swift` | Dual-handle `Capsule` scrubber with `TrimHandle` drag gestures + **blade extensions**: `bladeCuts`, `selectedSegment`, `playheadSeconds`, `onBlade`/`onDeleteSegment`/`onSelectSegment`. Renders track, selected range, **segment selection highlight** (`strokeBorder yellow`), **cut dividers** (2pt white), **playhead** (yellow), handles, and bottom `Blade` + `Delete Segment` buttons with `isBladeDisabled`/`isDeleteDisabled` + segment label. All blade params default to no-op for backward compat (`ReviewView` with old 3-arg init still compiles). |
-| `LUTThumbnailProvider.swift` (`Core/LUTs/`) | `NSCache<NSString,CGImage>` + `CIContext(mtlDevice:)` singleton. `thumbnail(for:)` checks `.cube` mtime, invalidates cache, renders `baseGradient()` (`CILinearGradient` blue→red) through `CIFilter.colorCube(cubeDimension:64, cubeData:)`; Natural → neutral gray, missing data → tinted placeholder. Exported `LUTSwatchView` (40×24, async `Task.detached`, cached). |
+| `LUTThumbnailProvider.swift` (`Core/LUTs/`) | `NSCache<NSString,CGImage>` + `CIContext(mtlDevice:)` singleton. `thumbnail(for:)` checks `.cube` mtime, invalidates cache, renders `baseGradient()` (`CILinearGradient` blue→red) through `CIFilter.colorCube` with the loader's sniffed dimension; Natural → neutral gray, missing data → tinted placeholder. Exported `LUTSwatchView` (40×24, async `Task.detached`, cached). |
 
 ### `Features/Profile/`, `Features/Settings/`
 
@@ -195,7 +197,7 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 |--------|-------|------|
 | `Persistence` | `Script.swift` (models + `LUTPreset`), `CadenceViewModel.swift` | SwiftData + cadence math |
 | `Export` | `ExportService.swift` | `exportPassthrough`, `exportWithLUT`, **new** `exportTake(_:outputURL:)` (multi-segment `AVMutableComposition` + `AVVideoComposition` with LUT; passthrough when Natural) + `PHPhotoLibrary` save |
-| `LUTs` | `LUTCubeLoader.swift` (`cubeDimension=64`, `data(for:)`, `filter(for:inputImage:)`), `LUTThumbnailProvider.swift` | `.cube` loading + thumbnails |
+| `LUTs` | `LUTCubeLoader.swift` (size-aware: Adobe text vs legacy raw-binary sniff, 16/32/64, `NSLock` cache, `parseAdobe`/`floatData`/`dimension(in:)`), `LUTThumbnailProvider.swift` | `.cube` loading + thumbnails |
 | `Audio` | `AudioSessionService.swift` (`@Observable`, `nonisolated(unsafe) meterTimer`, level metering, `currentRouteName`) | Mic + VU |
 | `Haptics` | `HapticsService.swift` | Prewarm + tick/impact |
 | `Activity` | `RecordingActivityService.swift`, `RecordingAttributes.swift` | Live Activities (`elapsedSeconds`, `audioLevel`, `isRecording`) — red dot indicators |
@@ -242,12 +244,16 @@ Run: `xcodebuild test -project OneTake.xcodeproj -scheme OneTake -destination 'p
 
 - **Xcode 17 (26.5 SDK)**, `SDKROOT = iphoneos`, `IPHONEOS_DEPLOYMENT_TARGET = 18.6` (project 26.5).
 - **Lint/Format:** `.swiftlint.yml` (opt-in `force_unwrapping`/`force_cast`/`force_try` as error, `file_length` 400/600, `type_body_length` 300/400, custom `prefer_observable`/`avoid_anyview`) + `.swiftformat` (4-space indent, 140 maxwidth, `wrapcollections before-first`). `swiftlint lint` → **0 errors** after recent fixes (152 warnings remain, mostly `attributes` placement and single-letter identifiers in closures). `swiftformat` → 35/40 files formatted.
-- **OpenSpec:** `openspec/` spec-driven workflow. Active change `unified-tabs-lut-preview-blade-trim` (17 tasks, all done) adds `unified-tab-navigation` + `blade-timeline-editing` and modifies `trim-color-export`; prior `bottom-nav-studio-flow` is 21/22. `openspec validate --changes` → 2 passed. `.opencode/` holds skills.
+- **OpenSpec:** `openspec/` spec-driven workflow. Active changes: `trim-blade-luts-pricing` (12/13 — 4.4 device taste QA blocked) and `onboarding-terms-paywall` (16/17 — owner Terms/dashboard pending); prior `unified-tabs-lut-preview-blade-trim` (17 done); `bottom-nav-studio-flow` 21/22. `openspec validate --changes` → 4 passed. `.opencode/` holds skills.
 - **CI:** `xcodebuild build` succeeds on iPhone 17 Pro + iPad Pro 11-inch (M5); `swiftlint` phase runs every build (warns if not installed).
 
 ## 10. OpenSpec — Spec-Driven Changes
 
 - `openspec/specs/` — canonical specs (7): `audio-settings-intents`, `cadence-engine`, `capture-engine`, `live-recording-hud`, `prompter-studio`, `script-workspace`, `trim-color-export`.
+- `openspec/changes/trim-blade-luts-pricing/` — active: blade engine correctness (`BladeSegment` + `segmentsJSON`), timeline framing, 10 LUTs, `docs/PRICING.md`; `tasks.md` (6 groups, 13 tasks, 12 done).
+- `openspec/changes/content-first-launch/` — removes the blocking onboarding carousel per guidelines §15 (content-first launch, permissions in context); `tasks.md` (3 groups, 5 tasks, all done).
+- `openspec/changes/my-takes-guidelines-audit/` — home-screen hardening per guidelines (segment-delete confirm, body purity, row VoiceOver, localized days, search scopes); `tasks.md` (5 groups, 11 tasks).
+- `openspec/changes/onboarding-terms-paywall/` — RevenueCat paywall (`ProEntitlementService` + gates), terms acceptance, onboarding v2; `tasks.md` (6 groups, 17 tasks, 16 done — owner content/dashboard pending).
 - `openspec/changes/unified-tabs-lut-preview-blade-trim/` — `proposal.md` (BREAKING 4-tab), `design.md` (6 decisions, migration plan), `specs/` deltas (unified-tab-navigation, blade-timeline-editing, trim-color-export MODIFIED), `tasks.md` (6 groups, 17 tasks).
 - `openspec/changes/bottom-nav-studio-flow/` — prior tab + takes + pause + sheet work (21/22).
 
@@ -270,11 +276,11 @@ Run: `xcodebuild test -project OneTake.xcodeproj -scheme OneTake -destination 'p
 `scriptID` is stable even if `Script` is deleted; `script` relationship is optional for SwiftData graph.
 
 **Q: How do I add a LUT?**
-Drop `.cube` in `OneTake/Resources/`, add case to `LUTPreset` (rawValue = filename), `LUTCubeThumbnailProvider` will render a swatch automatically.
+Add a recipe to `tools/generate_luts.py` and run it (emits Adobe SIZE-32 text to `OneTake/Resources/`), add case to `LUTPreset` (rawValue = filename), `LUTCubeThumbnailProvider` will render a swatch automatically. Legacy raw-binary 64³ cubes still load byte-identical via the loader's sniff.
 
 **Q: How does blade export work?**
 `Take.bladeSegments()` → `ExportService.exportTake(_:outputURL:)` builds `AVMutableComposition` inserting each `timeRange`, then `AVVideoComposition` with `CIFilter.colorCube` only when needed.
 
 ---
 
-*Last updated: 2026-09-02 — after `unified-tabs-lut-preview-blade-trim` landing. For getting started, see `GETTING_STARTED.md`; for file-by-file ownership, see `CODEMAP.md`.*
+*Last updated: 2026-09-06 — during `trim-blade-luts-pricing` (BladeSegment engine, 10 LUTs, `docs/PRICING.md`). For getting started, see `GETTING_STARTED.md`; for file-by-file ownership, see `CODEMAP.md`.*

@@ -34,11 +34,15 @@ The system SHALL provide a dual-handle timeline scrubber allowing users to trim 
 - **THEN** the system shows an error alert, retains the original file, and allows retry without data loss
 
 ### Requirement: GPU 3D LUT color grading via CoreImage Metal
-The system SHALL apply `.cube` 3D LUT color tables through `CIFilter.colorCube` running on the Metal GPU, providing four built-in presets: Natural, Warm Studio, Cinematic Contrast, Clean Monochrome, and SHALL render a color preview swatch per preset in the picker.
+The system SHALL apply `.cube` 3D LUT color tables through `CIFilter.colorCube` running on the Metal GPU, providing ten built-in presets — Natural, Warm Studio, Cinematic Contrast, Clean Monochrome, Golden Hour, Teal & Orange, Faded Film, Noir Punch, Vibrant Pop, Cool Morning — loaded size-aware (Adobe text parsed via `LUT_3D_SIZE` for 16/32/64; legacy raw-binary files detected by byte count, 4 MB meaning 64), and SHALL render a color preview swatch per preset in the picker.
 
 #### Scenario: User selects Warm Studio preset
 - **WHEN** user selects Warm Studio before export
 - **THEN** the system loads the Warm Studio `cubeData` (64×64×64) and applies `CIFilter.colorCube(cubeDimension: 64)` via `CIContext(mtlDevice:)` to the exported frames
+
+#### Scenario: User selects a SIZE-32 preset
+- **WHEN** user selects Golden Hour before export
+- **THEN** the system parses `LUT_3D_SIZE 32` and applies `CIFilter.colorCube(cubeDimension: 32)` with identical plumbing
 
 #### Scenario: Natural is identity
 - **WHEN** user selects Natural
@@ -54,11 +58,11 @@ The system SHALL apply `.cube` 3D LUT color tables through `CIFilter.colorCube` 
 
 #### Scenario: LUT picker shows rendered swatches
 - **WHEN** the user opens the LUT picker in Review
-- **THEN** each row shows a 40×24 rendered swatch of that preset's transform (Natural = neutral gray, others tinted per their `.cube`) plus the display name; swatches are cached and regenerate when `.cube` data changes
+- **THEN** a 2-column tile grid shows all ten presets, each tile a rendered swatch of that preset's transform (Natural = neutral gray, others tinted per their `.cube`) plus the display name with a checkmark on the active preset; swatches are cached and regenerate when `.cube` data changes
 
 #### Scenario: Swatch fallback
 - **WHEN** a `.cube` file is missing or `cubeData` is nil
-- **THEN** the row shows a tinted placeholder swatch and the export falls back to Natural behavior for that preset
+- **THEN** the tile shows a tinted placeholder swatch and the export falls back to Natural behavior for that preset
 
 ### Requirement: Grouped edit menus
 The system SHALL group My Takes row actions and Review toolbar actions into `Menu` sections: "Adjust" (Trim, Blade/Split at Playhead, Delete Selected Segment) and "Color" (LUT) and "Output" (Save to Photos, Share), consistently across swipe trailing menu, context menu, and the Review toolbar ellipsis. Disabled states SHALL reflect current preconditions (e.g., Blade disabled at ends, Delete disabled with no selection, Save disabled while exporting).
@@ -115,6 +119,13 @@ The system SHALL allow editing an existing Take from My Takes by reopening `Revi
 #### Scenario: Delete from My Takes
 - **WHEN** the user deletes a Take via swipe in My Takes and confirms
 - **THEN** the file at `fileURL` and any segment temp directory are removed, the record is deleted, and the list animates removal
+
+### Requirement: Single-line actions row
+The system SHALL render the Review actions row ("Save as New Take" + "Replace" side by side) on one line each at 320–430pt widths via `.lineLimit(1)` plus downscaling (no wrapping), preserving button styles and disabled states.
+
+#### Scenario: Narrow-screen actions stay single-line
+- **WHEN** Review renders on a 320pt-wide device
+- **THEN** "Save as New Take" and "Replace" each occupy exactly one line without wrapping or clipping
 
 #### Scenario: Re-export failure retains original
 - **WHEN** re-export fails (disk full, invalid range)

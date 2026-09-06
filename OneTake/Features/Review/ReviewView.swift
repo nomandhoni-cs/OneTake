@@ -15,6 +15,8 @@ struct ReviewView: View {
     private var modelContext
     @Environment(\.dismiss)
     private var dismiss
+    @Environment(ProEntitlementService.self)
+    private var pro
 
     @Bindable var take: Take
 
@@ -31,7 +33,17 @@ struct ReviewView: View {
     @State private var exportedURL: URL?
     @State private var selectedSegment: Int?
     @State private var playheadSeconds: Double?
-    @State private var bladeUndoStack: [[Double]?] = []
+    @State private var bladeUndoStack: [(segments: [BladeSegment]?, cuts: [Double]?)] = []
+    @State private var showPaywall = false
+
+    /// Entitlement gate shared by every export path — presents the paywall sheet.
+    private func requirePro() -> Bool {
+        guard pro.isPro else {
+            showPaywall = true
+            return false
+        }
+        return true
+    }
 
     var body: some View {
         ScrollView {
@@ -70,7 +82,7 @@ struct ReviewView: View {
                         } label: {
                             Label("Delete Selected Segment", systemImage: "trash")
                         }
-                        .disabled(selectedSegment == nil || take.bladeSegments().count <= 1)
+                        .disabled(selectedSegment == nil || take.rangesClippedTo(start: trimStart, end: trimEnd).count <= 1)
                     }
                     Section("Color") {
                         Menu {
@@ -124,6 +136,11 @@ struct ReviewView: View {
         .alert("Saved to Photos", isPresented: $showSaved) {
             Button("OK", role: .cancel) {}
         } message: { Text("Your video was saved to the Photos library.") }
+        .sheet(isPresented: $showPaywall) {
+            NavigationStack {
+                PaywallView(showsClose: true)
+            }
+        }
         .overlay {
             if isExporting {
                 ProgressView(exportProgress).padding().background(
@@ -153,7 +170,7 @@ struct ReviewView: View {
                     }
             }
         }
-        .task(id: take.bladeCuts?.description ?? take.fileURL.absoluteString) {
+        .task(id: "\(take.bladeCuts.debugDescription)-\(take.segments.debugDescription)-\(take.fileURL.absoluteString)") {
             let url = take.fileURL
             guard FileManager.default.fileExists(atPath: url.path) else { return }
             // Honor blade composition for preview; falls back to plain URL for single segment.
@@ -173,7 +190,7 @@ struct ReviewView: View {
                     duration: duration,
                     startSeconds: $trimStart,
                     endSeconds: $trimEnd,
-                    bladeCuts: take.bladeCuts ?? [],
+                    segments: take.rangesClippedTo(start: trimStart, end: trimEnd),
                     selectedSegment: selectedSegment,
                     playheadSeconds: playheadSeconds,
                     onBlade: { splitAtPlayhead() },
@@ -221,32 +238,49 @@ struct ReviewView: View {
     private var lutSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Color").font(.headline)
-            VStack(spacing: 6) {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                spacing: 8
+            ) {
                 ForEach(LUTPreset.allCases) { preset in
+                    let isSelected = preset == selectedLUT
                     Button {
                         selectedLUT = preset
                     } label: {
-                        HStack(spacing: 10) {
-                            LUTSwatchView(preset: preset)
-                            Text(preset.displayName)
-                                .font(.subheadline.weight(preset == selectedLUT ? .semibold : .regular))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if preset == selectedLUT {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.accentColor)
+                        VStack(spacing: 6) {
+                            ZStack(alignment: .topTrailing) {
+                                LUTSwatchView(preset: preset, height: 56, fillsWidth: true)
+                                if isSelected {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(Color.accentColor)
+                                        .background(.white, in: Circle())
+                                        .padding(6)
+                                }
                             }
+                            Text(preset.displayName)
+                                .font(.caption.weight(isSelected ? .semibold : .regular))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
                         }
                         .padding(8)
+                        .frame(maxWidth: .infinity)
                         .background(
-                            preset == selectedLUT
+                            isSelected
                                 ? Color.accentColor.opacity(0.12)
                                 : Color.primary.opacity(0.04),
-                            in: RoundedRectangle(cornerRadius: 8)
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(
+                                    isSelected ? Color.accentColor : .clear,
+                                    lineWidth: 2
+                                )
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(preset == selectedLUT ? [.isSelected] : [])
+                    .accessibilityLabel(preset.displayName)
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 }
             }
             if selectedLUT != .natural {
@@ -266,6 +300,8 @@ struct ReviewView: View {
                     Task { await reexport(saveAsNew: true) }
                 } label: {
                     Label("Save as New Take", systemImage: "plus.circle")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -275,6 +311,8 @@ struct ReviewView: View {
                     Task { await reexport(saveAsNew: false) }
                 } label: {
                     Label("Replace", systemImage: "arrow.triangle.2.circlepath")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -304,6 +342,7 @@ struct ReviewView: View {
 
     // swiftlint:disable:next function_body_length
     private func reexport(saveAsNew: Bool) async {
+        guard requirePro() else { return }
         isExporting = true
         exportProgress = "Exporting…"
         defer { isExporting = false }
@@ -312,22 +351,10 @@ struct ReviewView: View {
             start: CMTime(seconds: trimStart, preferredTimescale: 600),
             duration: CMTime(seconds: max(1, trimEnd - trimStart), preferredTimescale: 600)
         )
-        // Blade-aware: prune cuts to the current trim range for export
-        let prunedCuts: [Double]? = {
-            guard let cuts = take.bladeCuts, !cuts.isEmpty else { return nil }
-            let start = trimRange.start.seconds
-            let end = start + trimRange.duration.seconds
-            let filtered = cuts.filter { $0 > start + 0.1 && $0 < end - 0.1 }.sorted()
-            var deduped: [Double] = []
-            for value in filtered {
-                if let last = deduped.last, abs(last - value) < 0.1 {
-                    continue
-                }
-                deduped.append(value)
-            }
-            return deduped.isEmpty ? nil : deduped
-        }()
-        let hasBlades = !(prunedCuts?.isEmpty ?? true)
+        // Blade-aware: clip stored ranges to the current trim range for export
+        // (non-mutating — the take itself is only touched on save choice below)
+        let exportRanges = take.rangesClippedTo(start: trimStart, end: trimEnd)
+        let hasBlades = exportRanges.count > 1
         let tmpURL = ExportService.tempOutputURL()
         do {
             let outURL: URL
@@ -335,14 +362,14 @@ struct ReviewView: View {
                 exportProgress = selectedLUT == .natural
                     ? "Composing blade segments…"
                     : "Composing with \(selectedLUT.displayName)…"
-                // Export via composition using a transient Take that carries the pruned cuts
+                // Export via composition using a transient Take that carries the clipped ranges
                 let tempTake = Take(
                     scriptID: take.scriptID,
                     fileURL: sourceURL,
                     duration: take.duration,
                     trimRange: trimRange,
                     lutPreset: selectedLUT.rawValue,
-                    bladeCuts: prunedCuts
+                    segments: exportRanges
                 )
                 outURL = try await ExportService.shared.exportTake(tempTake, outputURL: tmpURL)
             } else if selectedLUT == .natural {
@@ -358,32 +385,17 @@ struct ReviewView: View {
             }
             exportedURL = outURL
             if saveAsNew {
-                let newDuration = hasBlades
-                    ? (prunedCuts.map { _ in trimRange.duration.seconds } ?? trimRange.duration.seconds)
+                // Composed duration is the sum of surviving ranges.
+                let effectiveDuration: Double = hasBlades
+                    ? exportRanges.reduce(0) { $0 + $1.duration }
                     : trimRange.duration.seconds
-                // For blade, compute effective duration from segments
-                let effectiveDuration: Double = {
-                    if let cuts = prunedCuts, !cuts.isEmpty {
-                        var prev = trimRange.start.seconds
-                        var total = 0.0
-                        let end = trimRange.start.seconds + trimRange.duration.seconds
-                        for cut in cuts.sorted() {
-                            total += cut - prev
-                            prev = cut
-                        }
-                        total += end - prev
-                        return total
-                    }
-                    return trimRange.duration.seconds
-                }()
                 let newTake = Take(
                     scriptID: take.scriptID,
                     fileURL: outURL,
                     duration: effectiveDuration,
                     trimRange: hasBlades ? nil : trimRange,
                     lutPreset: selectedLUT.rawValue,
-                    script: take.script,
-                    bladeCuts: hasBlades ? nil : nil
+                    script: take.script
                 )
                 // Blade takes are already composed; store as single segment
                 modelContext.insert(newTake)
@@ -393,18 +405,20 @@ struct ReviewView: View {
                 take.trimStartSeconds = trimRange.start.seconds
                 take.trimDurationSeconds = trimRange.duration.seconds
                 take.lutPreset = selectedLUT.rawValue
-                take.bladeCuts = prunedCuts
+                take.segments = exportRanges.isEmpty ? nil : exportRanges
+                take.syncCutsFromSegments()
                 if outURL != oldURL {
                     take.relativeFilePath = Take.relativePath(for: outURL)
                     try? FileManager.default.removeItem(at: oldURL)
-                    // Composed blade result is single file; clear cuts after bake
+                    // Composed blade result is single file; clear ranges after bake
                     if hasBlades {
-                        take.bladeCuts = nil; take.trimStartSeconds = nil; take.trimDurationSeconds = nil
+                        take.segments = nil; take.bladeCuts = nil; take.trimStartSeconds = nil; take.trimDurationSeconds = nil
                     }
-                    take.duration = hasBlades ? take.bladeEffectiveDuration : trimRange.duration.seconds
+                    take.duration = hasBlades ? exportRanges.reduce(0.0) { $0 + $1.duration } : trimRange.duration.seconds
                 } else if hasBlades {
-                    // Passthrough replaced in place; keep cuts until next edit
-                    take.bladeCuts = prunedCuts
+                    // Passthrough replaced in place; keep ranges until next edit
+                    take.segments = exportRanges.isEmpty ? nil : exportRanges
+                    take.syncCutsFromSegments()
                 }
             }
             try? modelContext.save()
@@ -479,85 +493,44 @@ struct ReviewView: View {
     private func splitAtPlayhead() {
         let time = playheadSeconds ?? (trimStart + trimEnd) / 2
         guard time > trimStart + 0.1, time < trimEnd - 0.1 else { return }
-        if let cuts = take.bladeCuts, cuts.contains(where: { abs($0 - time) < 0.1 }) {
-            return
-        }
-        bladeUndoStack.append(take.bladeCuts)
-        var cuts = take.bladeCuts ?? []
-        cuts.append(time)
-        cuts.sort()
-        var deduped: [Double] = []
-        for value in cuts {
-            if let last = deduped.last, abs(last - value) < 0.1 {
-                continue
-            }
-            deduped.append(value)
-        }
-        take.bladeCuts = deduped
+        take.clipSegments(start: trimStart, end: trimEnd)
+        let before = (take.segments, take.bladeCuts)
+        guard let idx = take.split(at: time) else { return }
+        bladeUndoStack.append(before)
         try? modelContext.save()
-        // Auto-select new segment containing the cut
-        let segs = take.bladeSegments()
-        for (idx, seg) in segs.enumerated() {
-            let s = seg.start.seconds
-            let e = s + seg.duration.seconds
-            if time >= s, time < e {
-                selectedSegment = idx
-                break
-            }
-        }
+        selectedSegment = idx
     }
 
     private func deleteSelectedSegment() {
         guard let idx = selectedSegment else { return }
-        let segments = take.bladeSegments()
-        guard idx >= 0, idx < segments.count, segments.count > 1 else { return }
-        bladeUndoStack.append(take.bladeCuts)
-        let seg = segments[idx]
-        let segStart = seg.start.seconds
-        let segEnd = seg.start.seconds + seg.duration.seconds
-        let len = seg.duration.seconds
-        let trimStartVal = take.trimRange?.start.seconds ?? 0
-        let trimEndVal = (take.trimRange.map { $0.start.seconds + $0.duration.seconds } ?? take.duration)
-        var cuts = take.normalizedBladeCuts
-        var newCuts: [Double] = []
-        for cut in cuts {
-            // Remove boundary of deleted segment: keep start for interior, remove end
-            if segEnd != trimEndVal, cut == segEnd {
-                continue
-            }
-            if segEnd == trimEndVal, cut == segStart {
-                continue
-            }
-            var newCut = cut
-            if cut > segEnd {
-                newCut -= len
-            }
-            newCuts.append(newCut)
-        }
-        take.bladeCuts = newCuts.isEmpty ? nil : newCuts
+        take.clipSegments(start: trimStart, end: trimEnd)
+        let before = (take.segments, take.bladeCuts)
+        guard take.deleteSegment(at: idx) else { return }
+        bladeUndoStack.append(before)
         try? modelContext.save()
         selectedSegment = nil
     }
 
     private func pruneBladeCutsToTrim() {
-        let pruned = take.prunedBladeCuts()
-        if pruned?.count != take.bladeCuts?.count {
-            take.bladeCuts = pruned
+        if take.clipSegments(start: trimStart, end: trimEnd) {
             try? modelContext.save()
-            if let sel = selectedSegment, sel >= take.bladeSegments().count {
-                selectedSegment = nil
-            }
+        }
+        // Validate against UI-trimmed ranges (scrubber space), not persisted trim.
+        if let sel = selectedSegment, sel >= take.rangesClippedTo(start: trimStart, end: trimEnd).count {
+            selectedSegment = nil
         }
     }
 
     private func undoLastBlade() {
         guard let last = bladeUndoStack.popLast() else { return }
-        take.bladeCuts = last
+        take.segments = last.segments
+        take.bladeCuts = last.cuts
         try? modelContext.save()
         selectedSegment = nil
     }
 
     private func exportAndSave() async {
+        guard requirePro() else { return }
         isExporting = true
         exportProgress = "Exporting…"
         defer { isExporting = false }
@@ -567,22 +540,10 @@ struct ReviewView: View {
             start: CMTime(seconds: trimStart, preferredTimescale: 600),
             duration: CMTime(seconds: max(1, trimEnd - trimStart), preferredTimescale: 600)
         )
-        // Blade-aware pruning
-        let prunedCuts: [Double]? = {
-            guard let cuts = take.bladeCuts, !cuts.isEmpty else { return nil }
-            let start = trimRange.start.seconds
-            let end = start + trimRange.duration.seconds
-            let filtered = cuts.filter { $0 > start + 0.1 && $0 < end - 0.1 }.sorted()
-            var deduped: [Double] = []
-            for value in filtered {
-                if let last = deduped.last, abs(last - value) < 0.1 {
-                    continue
-                }
-                deduped.append(value)
-            }
-            return deduped.isEmpty ? nil : deduped
-        }()
-        let hasBlades = !(prunedCuts?.isEmpty ?? true)
+        // Blade-aware: clip stored ranges to the current trim range for export
+        // (non-mutating — the take itself is only touched on save below)
+        let exportRanges = take.rangesClippedTo(start: trimStart, end: trimEnd)
+        let hasBlades = exportRanges.count > 1
         let tmpURL = ExportService.tempOutputURL()
 
         do {
@@ -597,7 +558,7 @@ struct ReviewView: View {
                     duration: take.duration,
                     trimRange: trimRange,
                     lutPreset: selectedLUT.rawValue,
-                    bladeCuts: prunedCuts
+                    segments: exportRanges
                 )
                 outURL = try await ExportService.shared.exportTake(tempTake, outputURL: tmpURL)
             } else if selectedLUT == .natural {
@@ -616,7 +577,8 @@ struct ReviewView: View {
             take.trimStartSeconds = trimRange.start.seconds
             take.trimDurationSeconds = trimRange.duration.seconds
             take.lutPreset = selectedLUT.rawValue
-            take.bladeCuts = prunedCuts
+            take.segments = exportRanges.isEmpty ? nil : exportRanges
+            take.syncCutsFromSegments()
             try? modelContext.save()
 
             exportProgress = "Saving to Photos…"
@@ -625,17 +587,19 @@ struct ReviewView: View {
             if outURL != sourceURL {
                 try? FileManager.default.removeItem(at: sourceURL)
                 take.relativeFilePath = Take.relativePath(for: outURL)
-                // Composed result is baked; clear blade/trim if we baked blades
+                // Composed blade result is single file; clear ranges after bake
                 if hasBlades {
+                    take.segments = nil
                     take.bladeCuts = nil
                     take.trimStartSeconds = nil
                     take.trimDurationSeconds = nil
-                    take.duration = take.bladeEffectiveDuration
                 }
+                take.duration = hasBlades ? exportRanges.reduce(0.0) { $0 + $1.duration } : take.bladeEffectiveDuration
                 try? modelContext.save()
             } else if hasBlades {
-                // In-place passthrough with blades? keep pruned
-                take.bladeCuts = prunedCuts
+                // In-place passthrough with blades? keep ranges until next edit
+                take.segments = exportRanges.isEmpty ? nil : exportRanges
+                take.syncCutsFromSegments()
                 try? modelContext.save()
             }
             exportProgress = "Saved ✓"
@@ -654,4 +618,5 @@ struct ReviewView: View {
         ReviewView(take: Take(scriptID: UUID(), fileURL: URL(fileURLWithPath: "/tmp/demo.mp4"), duration: 30))
             .modelContainer(for: [Script.self, Take.self, ScriptCategory.self], inMemory: true)
     }
+    .environment(ProEntitlementService.previewUnlocked)
 }

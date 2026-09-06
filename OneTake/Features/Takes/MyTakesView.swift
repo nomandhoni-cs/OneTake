@@ -19,6 +19,80 @@ import SwiftUI
 //
 import AVFoundation
 
+/// Guideline-driven helpers for the Takes library — pure, UI-free, unit-tested.
+/// Predicates are enablement heuristics; mutating actions re-validate (§11.1).
+enum TakesLibrary {
+    /// Editable window: explicit trim, else full duration (10s fallback mirrors legacy takes).
+    static func trimWindow(of take: Take) -> (start: Double, end: Double) {
+        let duration = take.duration > 0 ? take.duration : 10
+        let start = take.trimStartSeconds ?? 0
+        return (start, start + (take.trimDurationSeconds ?? duration))
+    }
+
+    static func effectiveTrimLength(of take: Take) -> TimeInterval {
+        let window = trimWindow(of: take)
+        return max(window.end - window.start, 0)
+    }
+
+    static func canBladeSplit(_ take: Take) -> Bool {
+        effectiveTrimLength(of: take) >= 1.1
+    }
+
+    static func canDeleteLastSegment(of take: Take) -> Bool {
+        take.bladeSegments().count > 1
+    }
+
+    static func matchesScope(_ take: Take, scope: TakeScope) -> Bool {
+        scope == .all || take.isReaction
+    }
+
+    /// Localized day key ("Today"/"Yesterday" in-device locale, else medium date).
+    /// Local formatter per call: thread-safe by construction for parallel tests;
+    /// the view's render loop uses its own cached `dayFormatter`.
+    static func relativeDayKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: date)
+    }
+
+    static func freestyleTitle() -> String {
+        String(localized: "Freestyle / No script")
+    }
+
+    static func formatDuration(_ duration: TimeInterval) -> String {
+        let total = Int(duration.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// Single VoiceOver label for a row (spec `takes-row-a11y`).
+    static func rowAccessibilityLabel(title: String, take: Take, fileExists: Bool) -> String {
+        var parts = [title, formatDuration(take.duration)]
+        if take.trimRange != nil {
+            parts.append(String(localized: "Trimmed"))
+        }
+        if take.lutPreset != LUTPreset.natural.rawValue {
+            parts.append(LUTPreset(rawValue: take.lutPreset)?.displayName ?? take.lutPreset)
+        }
+        if take.isReaction {
+            parts.append(String(localized: "Reaction"))
+        }
+        parts.append(relativeDayKey(for: take.createdAt))
+        if !fileExists {
+            parts.append(String(localized: "File missing"))
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// Visible library filter — the native, discoverable replacement for the old
+/// hidden "reaction" search keyword (§1.6, §10.1).
+enum TakeScope: String, CaseIterable, Hashable {
+    case all
+    case reactions
+}
+
 // swiftlint:disable force_try force_cast force_unwrapping
 
 struct MyTakesView: View {
@@ -30,48 +104,53 @@ struct MyTakesView: View {
     private var scripts: [Script]
 
     @State private var searchText = ""
+    @State private var takeScope: TakeScope = .all
     @State private var navigationPath = NavigationPath()
     @State private var showStudio = false
     @State private var deleteTarget: Take?
     @State private var showDeleteConfirm = false
+    @State private var pendingSegmentDelete: Take?
     @State private var fileMissingAlert = false
+    /// Disk presence by take — refreshed off-body in `.task(id:)` (§14.2).
+    /// `nil` = unchecked; rows assume present until the check lands.
+    @State private var existingFiles: Set<Take.ID>?
+    @State private var haptics = HapticsService()
+
+    /// Cached for the render loop — one formatter for all rows per evaluation.
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.doesRelativeDateFormatting = true
+        return formatter
+    }()
+
+    private func fileExists(_ take: Take) -> Bool {
+        existingFiles.map { $0.contains(take.id) } ?? true
+    }
 
     private var scriptTitleByID: [UUID: String] {
         Dictionary(uniqueKeysWithValues: scripts.map { ($0.id, $0.title) })
     }
 
     private func resolvedTitle(for take: Take) -> String {
-        if let t = scriptTitleByID[take.scriptID], !t.isEmpty {
-            return t
+        if let title = scriptTitleByID[take.scriptID], !title.isEmpty {
+            return title
         }
-        return "Freestyle / No script"
+        return TakesLibrary.freestyleTitle()
     }
 
     private var filteredTakes: [Take] {
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return takes }
-        // "reaction" keyword filters reaction takes; otherwise match titles.
-        if q.lowercased() == "reaction" {
-            return takes.filter(\.isReaction)
-        }
-        return takes.filter { resolvedTitle(for: $0).localizedCaseInsensitiveContains(q) }
+        let scoped = takes.filter { TakesLibrary.matchesScope($0, scope: takeScope) }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return scoped }
+        return scoped.filter { resolvedTitle(for: $0).localizedCaseInsensitiveContains(query) }
     }
 
     private var grouped: [(key: String, takes: [Take])] {
-        let fmt = DateFormatter()
-        fmt.dateStyle = .medium
-        fmt.timeStyle = .none
-        let cal = Calendar.current
-        func dayKey(for date: Date) -> String {
-            if cal.isDateInToday(date) {
-                return "Today"
-            }
-            if cal.isDateInYesterday(date) {
-                return "Yesterday"
-            }
-            return fmt.string(from: date)
+        let dict: [String: [Take]] = Dictionary(grouping: filteredTakes) {
+            Self.dayFormatter.string(from: $0.createdAt)
         }
-        let dict: [String: [Take]] = Dictionary(grouping: filteredTakes) { dayKey(for: $0.createdAt) }
         var order: [String: Date] = [:]
         for (k, v) in dict {
             order[k] = v.map(\.createdAt).max() ?? .distantPast
@@ -103,13 +182,22 @@ struct MyTakesView: View {
                         ForEach(grouped, id: \.key) { group in
                             Section(header: Text(group.key)) {
                                 ForEach(group.takes) { take in
+                                    let exists = fileExists(take)
                                     Button { openTake(take) } label: {
                                         MyTakesRow(
                                             take: take,
                                             scriptTitle: resolvedTitle(for: take),
-                                            fileExists: FileManager.default.fileExists(atPath: take.fileURL.path)
+                                            fileExists: exists
                                         )
                                     }
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityLabel(TakesLibrary.rowAccessibilityLabel(
+                                        title: resolvedTitle(for: take),
+                                        take: take,
+                                        fileExists: exists
+                                    ))
+                                    .accessibilityHint(exists ? "Opens review" : "Shows options for the missing file")
+                                    .accessibilityAddTraits(.isButton)
                                     .contextMenu {
                                         Section("Adjust") {
                                             Button {
@@ -118,15 +206,9 @@ struct MyTakesView: View {
                                             Button {
                                                 bladeSplitTake(take)
                                             } label: {
-                                                Label("Blade Split at Playhead", systemImage: "scissors.badge.ellipsis")
+                                                Label("Blade Split at Middle", systemImage: "scissors.badge.ellipsis")
                                             }
-                                            .disabled((take.duration) < 1.1)
-                                            Button(role: .destructive) {
-                                                deleteLastBladeSegment(of: take)
-                                            } label: {
-                                                Label("Delete Last Segment", systemImage: "trash")
-                                            }
-                                            .disabled(take.bladeCuts?.isEmpty ?? true)
+                                            .disabled(!TakesLibrary.canBladeSplit(take))
                                         }
                                         Section("Color") {
                                             Menu {
@@ -134,6 +216,7 @@ struct MyTakesView: View {
                                                     Button {
                                                         take.lutPreset = preset.rawValue
                                                         try? modelContext.save()
+                                                        haptics.impact(style: .light)
                                                     } label: {
                                                         HStack(spacing: 8) {
                                                             LUTSwatchView(preset: preset)
@@ -147,11 +230,19 @@ struct MyTakesView: View {
                                             } label: { Label("LUT", systemImage: "paintpalette") }
                                         }
                                         Section("Output") {
-                                            if FileManager.default.fileExists(atPath: take.fileURL.path) {
+                                            if exists {
                                                 ShareLink(item: take.fileURL) {
                                                     Label("Share", systemImage: "square.and.arrow.up")
                                                 }
                                             }
+                                        }
+                                        Section("Destructive") {
+                                            Button(role: .destructive) {
+                                                pendingSegmentDelete = take
+                                            } label: {
+                                                Label("Delete Last Segment", systemImage: "trash")
+                                            }
+                                            .disabled(!TakesLibrary.canDeleteLastSegment(of: take))
                                             Button(role: .destructive) {
                                                 deleteTarget = take
                                                 showDeleteConfirm = true
@@ -181,6 +272,10 @@ struct MyTakesView: View {
             // Keep search at the top (navigation bar drawer), not bottomBar.
             // On iOS 26, `searchable` without placement can collapse to bottomBar inside TabView.
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search script title")
+            .searchScopes($takeScope) {
+                Text("All").tag(TakeScope.all)
+                Text("Reactions").tag(TakeScope.reactions)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showStudio = true } label: { Label("Record", systemImage: "video.fill.badge.plus") }
@@ -206,13 +301,46 @@ struct MyTakesView: View {
             }
             .confirmationDialog("Delete Take?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
-                    if let t = deleteTarget {
-                        performDelete(t)
+                    if let target = deleteTarget {
+                        performDelete(target)
                     }
                 }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
             } message: {
                 Text("This will delete the take and its video file. This cannot be undone.")
+            }
+            .confirmationDialog(
+                "Delete Last Segment?",
+                isPresented: Binding(get: { pendingSegmentDelete != nil }, set: {
+                    if !$0 {
+                        pendingSegmentDelete = nil
+                    }
+                }),
+                titleVisibility: .visible
+            ) {
+                Button("Delete Segment", role: .destructive) {
+                    if let target = pendingSegmentDelete {
+                        deleteLastBladeSegment(of: target)
+                        haptics.impact(style: .medium)
+                    }
+                    pendingSegmentDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pendingSegmentDelete = nil }
+            } message: {
+                Text("This permanently removes the last segment of this take. This cannot be undone.")
+            }
+            .task(id: takes.map(\.id)) {
+                // Disk presence off the render path: stat syscalls must never run in `body`.
+                let entries = takes.map { ($0.id, $0.fileURL) }
+                let found = await Task.detached(priority: .utility) {
+                    var known = Set<Take.ID>()
+                    let manager = FileManager.default
+                    for (id, url) in entries where manager.fileExists(atPath: url.path) {
+                        known.insert(id)
+                    }
+                    return known
+                }.value
+                existingFiles = found
             }
         }
         .fullScreenCover(isPresented: $showStudio) {
@@ -222,6 +350,7 @@ struct MyTakesView: View {
     }
 
     private func openTake(_ take: Take) {
+        // Live check (not the cache): the file may vanish while the list is open.
         if FileManager.default.fileExists(atPath: take.fileURL.path) {
             navigationPath.append(Route.review(take.id))
         } else {
@@ -241,32 +370,20 @@ struct MyTakesView: View {
     }
 
     private func bladeSplitTake(_ take: Take) {
-        let duration = take.duration > 0 ? take.duration : 10
-        let trimStart = take.trimStartSeconds ?? 0
-        let trimEnd = (take.trimStartSeconds ?? 0) + (take.trimDurationSeconds ?? duration)
-        let mid = (trimStart + trimEnd) / 2
-        guard mid > trimStart + 0.1, mid < trimEnd - 0.1 else { return }
-        if let cuts = take.bladeCuts, cuts.contains(where: { abs($0 - mid) < 0.1 }) {
-            return
-        }
-        var cuts = take.bladeCuts ?? []
-        cuts.append(mid)
-        cuts.sort()
-        var deduped: [Double] = []
-        for value in cuts {
-            if let last = deduped.last, abs(last - value) < 0.1 {
-                continue
-            }
-            deduped.append(value)
-        }
-        take.bladeCuts = deduped
+        let window = TakesLibrary.trimWindow(of: take)
+        let mid = (window.start + window.end) / 2
+        guard mid > window.start + 0.1, mid < window.end - 0.1 else { return }
+        take.clipSegments(start: window.start, end: window.end)
+        guard take.split(at: mid) != nil else { return }
         try? modelContext.save()
+        haptics.impact(style: .medium)
     }
 
     private func deleteLastBladeSegment(of take: Take) {
-        guard var cuts = take.bladeCuts, !cuts.isEmpty else { return }
-        cuts.removeLast()
-        take.bladeCuts = cuts.isEmpty ? nil : cuts
+        let window = TakesLibrary.trimWindow(of: take)
+        take.clipSegments(start: window.start, end: window.end)
+        let count = take.bladeSegments().count
+        guard count > 1, take.deleteSegment(at: count - 1) else { return }
         try? modelContext.save()
     }
 }
@@ -320,7 +437,7 @@ private struct MyTakesRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(scriptTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
                 HStack(spacing: 6) {
-                    Label(formatDuration(take.duration), systemImage: "clock")
+                    Label(TakesLibrary.formatDuration(take.duration), systemImage: "clock")
                         .font(.caption2).foregroundStyle(.secondary)
                     if take.trimRange != nil {
                         Text("Trimmed").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).background(
@@ -357,11 +474,6 @@ private struct MyTakesRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-
-    private func formatDuration(_ d: TimeInterval) -> String {
-        let s = Int(d.rounded())
-        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 

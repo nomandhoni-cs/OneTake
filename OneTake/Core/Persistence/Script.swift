@@ -83,6 +83,23 @@ final class ScriptCategory {
     }
 }
 
+/// Explicit blade timeline segment — a source-time range that survives export.
+///
+/// Cut positions alone cannot express "keep both sides, drop the middle", so
+/// deletions operate on these ranges (removal IS the compaction) while
+/// `Take.bladeCuts` mirrors internal boundaries for the scrubber dividers.
+struct BladeSegment: Codable, Equatable {
+    /// Source-time start in seconds.
+    var start: Double
+    /// Length in seconds.
+    var duration: Double
+
+    /// Source-time end in seconds.
+    var end: Double {
+        start + duration
+    }
+}
+
 /// A recorded take — linked to a script via `scriptID` (not a required relationship,
 /// so deletion of a `Script` does not orphan the file path logic).
 @Model
@@ -101,6 +118,29 @@ final class Take {
     /// `nil` or empty means single segment; cuts are clamped to `(trimStart, trimEnd)` and
     /// deduplicated within 0.1s.
     var bladeCuts: [Double]?
+    /// Explicit blade timeline ranges (source timebase). Nil = legacy takes:
+    /// derive from `bladeCuts`. Additive Optional → lightweight migration, no
+    /// version bump. See `bladeSegments()` + `docs/PERSISTENCE.md` §4.
+    var segmentsJSON: String?
+
+    /// Decoded blade ranges (nil when unset or undecodable — falls back to
+    /// legacy derivation). Stored as JSON because SwiftData transformable
+    /// storage only supports property-list values, not custom `Codable`
+    /// struct arrays.
+    var segments: [BladeSegment]? {
+        get {
+            guard let data = segmentsJSON?.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode([BladeSegment].self, from: data)
+        }
+        set {
+            guard let newValue else {
+                segmentsJSON = nil
+                return
+            }
+            segmentsJSON = (try? JSONEncoder().encode(newValue)).flatMap { String(data: $0, encoding: .utf8) }
+        }
+    }
+
     var lutPreset: String
     var script: Script?
     /// Reaction Studio marker — `true` when the file is a composited cutout
@@ -145,6 +185,7 @@ final class Take {
         lutPreset: String = LUTPreset.natural.rawValue,
         script: Script? = nil,
         bladeCuts: [Double]? = nil,
+        segments: [BladeSegment]? = nil,
         isReaction: Bool = false,
         backgroundAssetLocalID: String? = nil
     ) {
@@ -158,6 +199,10 @@ final class Take {
         self.lutPreset = lutPreset
         self.script = script
         self.bladeCuts = bladeCuts?.sorted()
+        if let segments {
+            let ordered = segments.sorted { $0.start < $1.start }
+            segmentsJSON = (try? JSONEncoder().encode(ordered)).flatMap { String(data: $0, encoding: .utf8) }
+        }
         self.isReaction = isReaction
         self.backgroundAssetLocalID = backgroundAssetLocalID
     }
@@ -195,14 +240,39 @@ final class Take {
     }
 
     /// Effective segments after trim + blade, as CMTimeRanges in source timebase.
+    /// Prefers explicit stored ranges; falls back to legacy cut-derivation so
+    /// takes predating `segments` behave exactly as before.
     func bladeSegments() -> [CMTimeRange] {
+        if let stored = segments, !stored.isEmpty {
+            let range = trimRange ?? CMTimeRange(
+                start: .zero,
+                duration: CMTime(seconds: duration, preferredTimescale: 600)
+            )
+            let end = range.start.seconds + range.duration.seconds
+            let clipped = stored.sorted { $0.start < $1.start }.compactMap { seg -> CMTimeRange? in
+                let start = max(seg.start, range.start.seconds)
+                let finish = min(seg.end, end)
+                guard finish - start > 0.05 else { return nil }
+                return CMTimeRange(
+                    start: CMTime(seconds: start, preferredTimescale: 600),
+                    duration: CMTime(seconds: finish - start, preferredTimescale: 600)
+                )
+            }
+            return clipped.isEmpty ? [range] : clipped
+        }
+        return derivedBladeSegments()
+    }
+
+    /// Legacy derivation: spans from cut positions (byte-for-byte preserved so
+    /// old takes and existing tests behave identically).
+    func derivedBladeSegments() -> [CMTimeRange] {
         let cuts = normalizedBladeCuts
         let range = trimRange ?? CMTimeRange(
             start: .zero,
             duration: CMTime(seconds: duration, preferredTimescale: 600)
         )
         guard !cuts.isEmpty else { return [range] }
-        var segments: [CMTimeRange] = []
+        var spans: [CMTimeRange] = []
         var prev = range.start.seconds
         let end = range.start.seconds + range.duration.seconds
         for cut in cuts {
@@ -213,7 +283,7 @@ final class Take {
                 start: CMTime(seconds: prev, preferredTimescale: 600),
                 duration: CMTime(seconds: cut - prev, preferredTimescale: 600)
             )
-            segments.append(seg)
+            spans.append(seg)
             prev = cut
         }
         let last = CMTimeRange(
@@ -221,9 +291,9 @@ final class Take {
             duration: CMTime(seconds: end - prev, preferredTimescale: 600)
         )
         if last.duration.seconds > 0.05 {
-            segments.append(last)
+            spans.append(last)
         }
-        return segments.isEmpty ? [range] : segments
+        return spans.isEmpty ? [range] : spans
     }
 
     /// Duration after blade deletions (sum of surviving segments).
@@ -236,9 +306,130 @@ final class Take {
         let pruned = normalizedBladeCuts
         return pruned.isEmpty ? nil : pruned
     }
+
+    // MARK: - Explicit range editing (source of truth when `segments` != nil)
+
+    /// Ranges in source timebase: stored, else derived from cuts over the full
+    /// duration. Callers mutate the stored list; `bladeSegments()` applies trim.
+    func unclippedRanges() -> [BladeSegment] {
+        if let stored = segments, !stored.isEmpty {
+            return stored.sorted { $0.start < $1.start }
+        }
+        guard duration > 0.1 else { return [] }
+        let cuts = (bladeCuts ?? []).filter { $0 > 0.1 && $0 < duration - 0.1 }.sorted()
+        var deduped: [Double] = []
+        for value in cuts {
+            if let last = deduped.last, abs(last - value) < 0.1 {
+                continue
+            }
+            deduped.append(value)
+        }
+        var out: [BladeSegment] = []
+        var prev = 0.0
+        for cut in deduped where cut > prev {
+            out.append(BladeSegment(start: prev, duration: cut - prev))
+            prev = cut
+        }
+        if duration - prev > 0.05 {
+            out.append(BladeSegment(start: prev, duration: duration - prev))
+        }
+        return out
+    }
+
+    /// Rebuild `bladeCuts` as internal boundaries (nil for ≤1 range).
+    /// No-op when no stored ranges exist, preserving legacy cuts verbatim.
+    func syncCutsFromSegments() {
+        guard let list = segments, list.count > 1 else {
+            if segments != nil {
+                bladeCuts = nil
+            }
+            return
+        }
+        bladeCuts = list.sorted { $0.start < $1.start }.dropFirst().map(\.start)
+    }
+
+    /// Split the range containing `time`; returns the right-half index.
+    /// No-op (nil) within 0.1s of a boundary — this subsumes the duplicate
+    /// rule. Never mutates on the no-op path.
+    func split(at time: Double) -> Int? {
+        var list = unclippedRanges()
+        guard !list.isEmpty else { return nil }
+        guard let index = list.firstIndex(where: { $0.start + 0.1 < time && time < $0.end - 0.1 }) else { return nil }
+        let seg = list[index]
+        list.replaceSubrange(index ... index, with: [
+            BladeSegment(start: seg.start, duration: time - seg.start),
+            BladeSegment(start: time, duration: seg.end - time),
+        ])
+        segments = list
+        syncCutsFromSegments()
+        return index + 1
+    }
+
+    /// Delete the range at `index`; removal IS the compaction. Returns false
+    /// for the sole survivor or an out-of-bounds index (state untouched).
+    /// Index contract: callers clip stored ranges to the visible trim first
+    /// (see `clipSegments`), so indices match the displayed spans.
+    @discardableResult
+    func deleteSegment(at index: Int) -> Bool {
+        var list = unclippedRanges()
+        guard list.count > 1, list.indices.contains(index) else { return false }
+        list.remove(at: index)
+        segments = list
+        syncCutsFromSegments()
+        return true
+    }
+
+    /// Ranges clipped to `[start, end)` without mutating (export math).
+    /// Sub-0.1s slivers merge into the previous range so indices stay aligned
+    /// with the scrubber, which ignores boundaries that close to trim edges.
+    func rangesClippedTo(start: Double, end: Double) -> [BladeSegment] {
+        Self.clip(unclippedRanges(), start: start, end: end)
+    }
+
+    /// Clip stored ranges to `[start, end)`; drop empties (nil when empty).
+    /// Returns true when anything changed (caller decides whether to save).
+    @discardableResult
+    func clipSegments(start: Double, end: Double) -> Bool {
+        if segments == nil, (bladeCuts ?? []).isEmpty {
+            return false // Un-bladed take: trimming needs no clip work.
+        }
+        let clipped = Self.clip(unclippedRanges(), start: start, end: end)
+        let before = segments
+        let beforeCuts = bladeCuts
+        if clipped.isEmpty {
+            segments = nil
+            bladeCuts = nil // fully clipped away: no dividers remain
+        } else {
+            segments = clipped
+            syncCutsFromSegments()
+        }
+        return segments != before || bladeCuts != beforeCuts
+    }
+
+    /// Clip + merge slivers shared by mutating and non-mutating callers.
+    private static func clip(_ list: [BladeSegment], start: Double, end: Double) -> [BladeSegment] {
+        var merged: [BladeSegment] = []
+        for seg in list {
+            let clampedStart = max(seg.start, start)
+            let clampedEnd = min(seg.end, end)
+            guard clampedEnd > clampedStart else { continue }
+            let clipped = BladeSegment(start: clampedStart, duration: clampedEnd - clampedStart)
+            if clipped.duration < 0.1, let last = merged.last {
+                merged[merged.count - 1] = BladeSegment(start: last.start, duration: clipped.end - last.start)
+            } else if clipped.duration < 0.1 {
+                continue // Leading sliver: trim start covers it.
+            } else {
+                merged.append(clipped)
+            }
+        }
+        return merged
+    }
 }
 
-/// GPU 3D LUT presets — backed by 64³ `.cube` files in `Resources/`.
+/// GPU 3D LUT presets — backed by `.cube` files in `Resources/`.
+///
+/// Legacy four ship as raw-binary 64³ dumps; generated grades ship as Adobe
+/// text (see `tools/generate_luts.py`) at SIZE 32. `LUTCubeLoader` sniffs both.
 ///
 /// Using an enum with associated `rawValue` prevents magic strings
 /// and drives pickers via `CaseIterable`.
@@ -247,6 +438,12 @@ enum LUTPreset: String, CaseIterable, Identifiable, Codable {
     case warmStudio = "warm_studio"
     case cinematicContrast = "cinematic_contrast"
     case cleanMonochrome = "clean_monochrome"
+    case goldenHour = "golden_hour"
+    case tealOrange = "teal_orange"
+    case fadedFilm = "faded_film"
+    case noir
+    case vibrantPop = "vibrant_pop"
+    case coolMorning = "cool_morning"
 
     var id: String {
         rawValue
@@ -258,6 +455,12 @@ enum LUTPreset: String, CaseIterable, Identifiable, Codable {
         case .warmStudio: "Warm Studio"
         case .cinematicContrast: "Cinematic Contrast"
         case .cleanMonochrome: "Clean Monochrome"
+        case .goldenHour: "Golden Hour"
+        case .tealOrange: "Teal & Orange"
+        case .fadedFilm: "Faded Film"
+        case .noir: "Noir Punch"
+        case .vibrantPop: "Vibrant Pop"
+        case .coolMorning: "Cool Morning"
         }
     }
 
@@ -269,8 +472,8 @@ enum LUTPreset: String, CaseIterable, Identifiable, Codable {
     }
 
     /// `nil` for natural (identity — skip the filter pass entirely).
+    /// Parsed Metal-ready floats via the loader — never raw file bytes.
     var cubeData: Data? {
-        guard self != .natural, let url = resourceURL else { return nil }
-        return try? Data(contentsOf: url)
+        LUTCubeLoader.data(for: self)
     }
 }

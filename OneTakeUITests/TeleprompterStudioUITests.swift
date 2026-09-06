@@ -16,8 +16,7 @@ final class TeleprompterStudioUITests: XCTestCase {
     func testTeleprompterModeOpensFullscreen() {
         let app = XCUIApplication()
         app.launch()
-
-        dismissOnboardingIfNeeded(app)
+        ensurePastOnboarding(app)
         app.tabBars.buttons["Studio"].tap()
 
         let teleprompterCard = app.buttons["Teleprompter"]

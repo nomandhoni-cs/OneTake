@@ -2,81 +2,91 @@
 //  OnboardingView.swift
 //  OneTake
 //
-//  Owns: First-launch onboarding — splash brand moment, three quick pages,
-//  and a camera/mic permission step with rationale.
-//  Why: HIG onboarding (fast, fun, optional, never blocks): splash opens the
-//  flow, each page teaches one thing, Skip is always available, the flag
-//  persists so it never reappears, and Profile offers a replay entry point.
-//  See: docs/ARCHITECTURE.md §3 + AGENTS.md §4
+//  Owns: First-run decision flow — welcome, terms, trial offer, explainer.
+//  Why: v2 is gates, not a tutorial: every step resolves a decision (start,
+//  agree, subscribe-or-skip, understand). Versioned so future legal bumps can
+//  force a terms-only pass; system permission prompts stay in context (§15).
+//  See: openspec/changes/onboarding-terms-paywall/specs/onboarding-v2/spec.md
 //
-import AVFoundation
 import SwiftUI
 
-/// First-launch gate lives in `ContentView` (`@AppStorage hasSeenOnboarding`).
+/// Onboarding steps in order. Terms is the only non-skippable step.
+enum OnboardingStep: Int, CaseIterable {
+    case welcome, terms, paywall, permissions
+}
+
+/// Pure flow logic — unit-tested, no SwiftUI dependency.
+enum OnboardingFlow {
+    static let currentVersion = 2
+
+    static func needsOnboarding(completedVersion: Int, acceptedLegalVersion: Int) -> Bool {
+        completedVersion < currentVersion || acceptedLegalVersion < LegalDocuments.currentVersion
+    }
+
+    /// Fresh users start at welcome; returning users with stale legal go to terms.
+    static func startStep(completedVersion: Int, acceptedLegalVersion: Int) -> OnboardingStep {
+        completedVersion < currentVersion ? .welcome : .terms
+    }
+
+    static func canSkip(_ step: OnboardingStep) -> Bool {
+        step == .paywall || step == .permissions
+    }
+}
+
+/// Versioned first-run flow. Owns its step state; completion persists twice
+/// (flow version + legal version/timestamp) for future legal bumps.
 struct OnboardingView: View {
-    @AppStorage("hasSeenOnboarding")
-    private var hasSeenOnboarding = false
-    @State private var page = 0
+    @Environment(ProEntitlementService.self)
+    private var pro
+    @AppStorage("completedOnboardingVersion")
+    private var completedVersion = 0
+    @AppStorage("acceptedLegalVersion")
+    private var acceptedLegalVersion = 0
+    @AppStorage("acceptedLegalAt")
+    private var acceptedLegalAt = ""
+
+    @State private var step: OnboardingStep
+
+    init() {
+        _step = State(initialValue: .welcome)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Spacer()
-                Button("Skip") { hasSeenOnboarding = true }
-                    .accessibilityLabel("Skip onboarding")
+                if OnboardingFlow.canSkip(step) {
+                    Button("Skip") { advance(from: step) }
+                        .accessibilityLabel("Skip this step")
+                }
             }
             .padding(.horizontal)
             .padding(.top, 8)
 
-            TabView(selection: $page) {
-                OnboardingSplashPage()
-                    .tag(0)
-                OnboardingPage(
-                    icon: "doc.text.fill",
-                    title: "Write your script",
-                    bodyText: "Draft in the Scripts tab — or freestyle. Nothing to memorize before you roll."
-                )
-                .tag(1)
-                OnboardingPage(
-                    icon: "video.fill",
-                    title: "Read, react, record",
-                    bodyText: "The prompter scrolls by the lens. React over any clip, then trim and share from My Takes."
-                )
-                .tag(2)
-                OnboardingPermissionPage()
-                    .tag(3)
+            // Plain switch, not a TabView: pages must not be swipe-skippable
+            // (terms acceptance is legally binding).
+            Group {
+                switch step {
+                case .welcome: welcomePage
+                case .terms: TermsView(mode: .accept(onAgree: agreeToLegal))
+                case .paywall: paywallPage
+                case .permissions: permissionsPage
+                }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .accessibilityLabel("Onboarding pages")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityLabel("Onboarding")
 
-            Button(primaryTitle) { primaryAction() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            primaryButton
                 .padding(.bottom, 32)
-                .accessibilityLabel(primaryTitle)
+        }
+        .onAppear {
+            step = OnboardingFlow.startStep(completedVersion: completedVersion, acceptedLegalVersion: acceptedLegalVersion)
         }
     }
 
-    private var primaryTitle: String {
-        switch page {
-        case 0: "Continue"
-        case 1, 2: "Next"
-        default: "Get Started"
-        }
-    }
+    // MARK: - Pages
 
-    private func primaryAction() {
-        if page < 3 {
-            withAnimation { page += 1 }
-        } else {
-            hasSeenOnboarding = true
-        }
-    }
-}
-
-/// Splash brand moment — opens the flow, pure branding, one glance.
-private struct OnboardingSplashPage: View {
-    var body: some View {
+    private var welcomePage: some View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "video.fill")
@@ -85,72 +95,109 @@ private struct OnboardingSplashPage: View {
                 .accessibilityHidden(true)
             Text("OneTake")
                 .font(.largeTitle.weight(.bold))
-            Text("Nail it in one take.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 32)
-        .multilineTextAlignment(.center)
-    }
-}
-
-/// One idea per page — icon, title, single body line.
-private struct OnboardingPage: View {
-    var icon: String
-    var title: String
-    var bodyText: String
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: icon)
-                .font(.system(size: 64))
-                .foregroundStyle(Color.appAccent)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.title.weight(.bold))
-            Text(bodyText)
-                .font(.body)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 32)
-        .multilineTextAlignment(.center)
-    }
-}
-
-/// Permission step with rationale — enables, never blocks.
-private struct OnboardingPermissionPage: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "camera.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(Color.appAccent)
-                .accessibilityHidden(true)
-            Text("Enable camera & mic")
-                .font(.title.weight(.bold))
-            Text("OneTake needs both to record. You can change this anytime in Settings.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            Button("Enable Camera & Mic") {
-                Task { await requestPermissions() }
+            VStack(alignment: .leading, spacing: 10) {
+                ValueRow(icon: "doc.text.fill", text: "Write scripts, read them off the lens")
+                ValueRow(icon: "person.2.fill", text: "React over any clip, solo or together")
+                ValueRow(icon: "wand.and.stars", text: "Trim, grade with 10 LUTs, export in 4K")
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Enable Camera and Mic")
+            .padding(.top, 8)
             Spacer()
         }
         .padding(.horizontal, 32)
-        .multilineTextAlignment(.center)
     }
 
-    private func requestPermissions() async {
-        _ = await AVCaptureDevice.requestAccess(for: .video)
-        _ = await AVCaptureDevice.requestAccess(for: .audio)
+    private var paywallPage: some View {
+        NavigationStack {
+            PaywallView(onUnlocked: { advance(from: .paywall) })
+        }
+    }
+
+    private var permissionsPage: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(Color.appAccent)
+                .accessibilityHidden(true)
+            Text("Private by design")
+                .font(.title.weight(.bold))
+            Text("Everything stays on your device. You'll be asked for access exactly when each feature needs it — never before.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 10) {
+                ValueRow(icon: "camera.fill", text: "Camera & microphone — when you first record")
+                ValueRow(icon: "photo.fill", text: "Photo library — when you first save a take")
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+    }
+
+    @ViewBuilder private var primaryButton: some View {
+        if step == .welcome {
+            Button("Continue") { advance(from: .welcome) }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityLabel("Continue")
+        } else if step == .terms {
+            // TermsView owns its Agree button (blocking by law).
+            EmptyView()
+        } else if step == .paywall {
+            Button("Not Now") { advance(from: .paywall) }
+                .font(.subheadline)
+                .accessibilityLabel("Skip subscription for now")
+        } else {
+            Button("Get Started") { finish() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityLabel("Finish onboarding")
+        }
+    }
+
+    // MARK: - Flow
+
+    private func agreeToLegal() {
+        acceptedLegalVersion = LegalDocuments.currentVersion
+        acceptedLegalAt = ISO8601DateFormatter().string(from: Date())
+        advance(from: .terms)
+    }
+
+    private func advance(from current: OnboardingStep) {
+        let order = OnboardingStep.allCases
+        guard let index = order.firstIndex(of: current) else {
+            finish()
+            return
+        }
+        let next = index + 1
+        if next < order.count {
+            withAnimation { step = order[next] }
+        } else {
+            finish()
+        }
+    }
+
+    private func finish() {
+        completedVersion = OnboardingFlow.currentVersion
     }
 }
 
 #Preview {
     OnboardingView()
+        .environment(ProEntitlementService.previewLocked)
+}
+
+/// Icon + one-line value prop — struct (not a helper func) for view identity.
+private struct ValueRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        Label {
+            Text(text).font(.body)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(Color.appAccent)
+        }
+        .accessibilityElement(children: .combine)
+    }
 }

@@ -17,9 +17,10 @@ import SwiftUI
 struct ProfileView: View {
     @Query(sort: \Take.createdAt, order: .reverse)
     private var takes: [Take]
+    @Environment(ProEntitlementService.self)
+    private var pro
     @State private var path = NavigationPath()
-    @AppStorage("hasSeenOnboarding")
-    private var hasSeenOnboarding = true
+    @State private var showPaywall = false
 
     private var takesSummary: String {
         let count = takes.count
@@ -35,6 +36,20 @@ struct ProfileView: View {
                     NavigationLink("Camera defaults") { CameraDefaultsDetail() }
                     NavigationLink("Countdown") { CountdownDetail() }
                     NavigationLink("Aspect / LUT") { AspectLUTDetail() }
+                }
+                Section("Subscription") {
+                    Button {
+                        showPaywall = true
+                    } label: {
+                        HStack {
+                            Label("OneTake Pro", systemImage: "crown.fill")
+                            Spacer()
+                            Text(pro.isPro ? "Active" : "Free")
+                                .foregroundStyle(pro.isPro ? Color.appAccent : .secondary)
+                                .font(.subheadline)
+                        }
+                    }
+                    .accessibilityLabel(pro.isPro ? "OneTake Pro, active" : "OneTake Pro, free plan")
                 }
                 Section("Takes") {
                     HStack {
@@ -60,19 +75,21 @@ struct ProfileView: View {
                     Link(destination: URL(string: UIApplication.openSettingsURLString)!) {
                         Label("Privacy Settings", systemImage: "hand.raised")
                     }
-                    Button {
-                        hasSeenOnboarding = false
+                    NavigationLink {
+                        TermsView(mode: .readOnly)
                     } label: {
-                        Label("Replay onboarding tour", systemImage: "graduationcap")
+                        Label("Terms & Privacy", systemImage: "doc.text.fill")
                     }
-                    .accessibilityLabel("Replay onboarding tour")
-                }
-                Section("Account") {
-                    Text("Sign in — coming soon").foregroundStyle(.secondary)
+                    .accessibilityLabel("Terms and Privacy Policy")
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Profile")
+            .sheet(isPresented: $showPaywall) {
+                NavigationStack {
+                    PaywallView(showsClose: true)
+                }
+            }
         }
     }
 }
@@ -129,11 +146,12 @@ private struct AspectLUTDetail: View {
     let ctx = ModelContext(c)
     ctx.insert(Take(scriptID: UUID(), fileURL: URL(fileURLWithPath: "/tmp/a.mp4"), duration: 32))
     ctx.insert(Take(scriptID: UUID(), fileURL: URL(fileURLWithPath: "/tmp/b.mp4"), duration: 60))
-    return ProfileView().modelContainer(c)
+    return ProfileView().modelContainer(c).environment(ProEntitlementService.previewLocked)
 }
 
 #Preview("Empty") {
     ProfileView().modelContainer(for: [Script.self, Take.self, ScriptCategory.self], inMemory: true)
+        .environment(ProEntitlementService.previewUnlocked)
 }
 
 // swiftlint:enable force_try force_cast force_unwrapping

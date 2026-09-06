@@ -18,6 +18,8 @@ struct StudioView: View {
     private var scenePhase
     @Environment(\.dismiss)
     private var dismiss
+    @Environment(ProEntitlementService.self)
+    private var pro
 
     @Query(sort: \Script.updatedAt, order: .reverse)
 
@@ -70,6 +72,7 @@ struct StudioView: View {
     @State private var showThermalBanner = false
     @State private var showSettingsSheet = false
     @State private var showDiscardConfirmation = false
+    @State private var showPaywall = false
 
     @State private var captureService = CaptureService()
     @State private var audioService = AudioSessionService()
@@ -274,6 +277,11 @@ struct StudioView: View {
         .onChange(of: isRecordingOrPaused) { _, active in
             studioIsRecordingFlag = active
         }
+        .sheet(isPresented: $showPaywall) {
+            NavigationStack {
+                PaywallView(showsClose: true)
+            }
+        }
         .sheet(isPresented: $showSettingsSheet) {
             StudioSettingsSheet(
                 resolution: $resolution,
@@ -415,6 +423,10 @@ struct StudioView: View {
     }
 
     private func startRecordingFlow() async {
+        guard pro.isPro else {
+            showPaywall = true
+            return
+        }
         if countdownEnabled {
             await runCountdown()
         }
@@ -539,6 +551,7 @@ struct StudioView: View {
 
 #Preview("Studio - No script") {
     NavigationStack { StudioView(initialScriptID: nil).modelContainer(for: [Script.self, Take.self, ScriptCategory.self], inMemory: true) }
+        .environment(ProEntitlementService.previewUnlocked)
 }
 
 #Preview("Studio - With script") {
@@ -551,10 +564,12 @@ struct StudioView: View {
     let s = Script(title: "Demo", body: "Hello OneTake\n\nScroll me at 2x.")
     ModelContext(c).insert(s)
     return NavigationStack { StudioView(initialScriptID: s.id).modelContainer(c) }
+        .environment(ProEntitlementService.previewUnlocked)
 }
 
 #Preview("Paused") {
     NavigationStack { StudioView(initialScriptID: nil).modelContainer(for: [Script.self, Take.self, ScriptCategory.self], inMemory: true) }
+        .environment(ProEntitlementService.previewUnlocked)
 }
 
 // swiftlint:enable force_try force_cast force_unwrapping

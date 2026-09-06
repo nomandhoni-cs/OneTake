@@ -4,7 +4,7 @@
 
 ## 1. Project in 30 Seconds
 
-**OneTake** is an offline-first iOS teleprompter + camera: write scripts → read from a scrolling prompter while the front camera records → trim / blade-split / grade with 3D LUTs → save to Photos. 100% SwiftUI + SwiftData, no network, no third-party deps.
+**OneTake** is an offline-first iOS teleprompter + camera: write scripts → read from a scrolling prompter while the front camera records → trim / blade-split / grade with 3D LUTs → save to Photos. 100% SwiftUI + SwiftData, one third-party dep (RevenueCat for Pro).
 
 - **Stack:** Swift 5.9, SwiftUI (Observation), SwiftData, AVFoundation + CoreImage/Metal + AVKit + Photos
 - **Deployment:** iOS 18.6+ (Liquid Glass on iOS 26), Xcode 17 (26.5 SDK)
@@ -17,13 +17,16 @@
 | Doc | What it answers | When to read |
 |-----|-----------------|--------------|
 | **[README.md](README.md)** | One-page overview, features, tech-stack table, quick start, status badges | First clone, or to link the project externally |
-| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | **Deep dive:** layers, app lifecycle, navigation (4-tab), persistence (`Script`/`Take`/`ScriptCategory` + `bladeCuts`), features, `Core/*` services, theme, testing, OpenSpec | Before touching `RootTabView`, `Script.swift`, or `ExportService` |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | **Deep dive:** layers, app lifecycle, navigation (4-tab), persistence (`Script`/`Take`/`ScriptCategory` + `BladeSegment`/`segmentsJSON`), features, `Core/*` services, theme, testing, OpenSpec | Before touching `RootTabView`, `Script.swift`, or `ExportService` |
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Prerequisites, `open *.xcodeproj`, CLI `xcodebuild build/test`, `swiftlint`/`swiftformat`, simulator tips | Setup, running, troubleshooting |
 | **[docs/CODEMAP.md](docs/CODEMAP.md)** | **File-by-file map:** `OneTake/` target, `OneTakeTests/`, `OneTakeUITests/`, `openspec/`, `OneTake.xcodeproj` | To find *where* a responsibility lives |
 | **[docs/PERSISTENCE.md](docs/PERSISTENCE.md)** | **Data contract:** model catalog, store/file layout, migration rules, add-a-field checklist, version playbook | Before touching models, `Schema.swift`, or the store |
+| **[docs/SWIFTUI_GUIDELINES.md](docs/SWIFTUI_GUIDELINES.md)** | **View implementation standard:** HIG design principles → iOS patterns → pre-implementation gate → code rules (layout, color, a11y, navigation, state, performance) → Definition of Done | **Before implementing any view** |
 | **[docs/LINT_REPORT.md](docs/LINT_REPORT.md)** | Best-practice audit: current `0 violations`, before/after, auto-fix vs manual, remaining warnings plan | Before committing, or to understand lint config |
+| **[docs/PRICING.md](docs/PRICING.md)** | Monetization plan: 7-day trial + Annual $12.99 / Monthly $1.99 / Lifetime $39.99; paywall implemented via RevenueCat | Before touching paywall, entitlements, or LUT gating |
+| **[docs/STORE_SETUP.md](docs/STORE_SETUP.md)** | Owner checklist: ASC + RevenueCat dashboard, product IDs, legal content, sandbox QA | Before submitting, or when the paywall shows "Plans unavailable" |
 | **`openspec/specs/`** (7 canonical) | `audio-settings-intents`, `cadence-engine`, `capture-engine`, `live-recording-hud`, `prompter-studio`, `script-workspace`, `trim-color-export` | To understand *what* the system shall do |
-| **`openspec/changes/`** (2) | `bottom-nav-studio-flow` (prior), `unified-tabs-lut-preview-blade-trim` (17 tasks, 4-tab + LUT swatches + blade) | To see *why/how* a feature was built |
+| **`openspec/changes/`** (6) | `bottom-nav-studio-flow` (prior), `unified-tabs-lut-preview-blade-trim` (17 tasks, 4-tab + LUT swatches + blade), `trim-blade-luts-pricing` (active: blade segments, 10 LUTs, pricing), `content-first-launch` (no blocking onboarding, permissions in context), `my-takes-guidelines-audit` (home-screen guideline hardening + tests), `onboarding-terms-paywall` (RevenueCat paywall + terms + onboarding v2; owner content pending) | To see *why/how* a feature was built |
 
 > **Linking contract:** Every doc links back here; `README.md` links to `docs/`; `docs/ARCHITECTURE.md` §10 links to `openspec/`; `AGENTS.md` is the hub. If you add a doc, link it here and in `README.md`.
 
@@ -54,9 +57,10 @@ Full diagram + data-flow (Script → Studio → Take → Review) in **[docs/ARCH
 OneTake/OneTakeApp.swift              # @main, Schema, WindowGroup
 OneTake/ContentView.swift             # ENABLE_TAB_SHELL, Route, ScriptLibraryView + ScriptRow
 OneTake/RootTabView.swift             # AppTab (4 cases), RootTabView, StudioTab (mode picker), ScriptsTab
-OneTake/Core/Persistence/Script.swift # Script, ScriptCategory, Take (bladeCuts, isReaction), LUTPreset
+OneTake/Core/Persistence/Script.swift # Script, ScriptCategory, Take (BladeSegment + segmentsJSON, bladeCuts synced), LUTPreset (10 cases)
 OneTake/Core/Theme/AppTheme.swift     # Color tokens
-OneTake/Core/LUTs/LUTCubeLoader.swift + LUTThumbnailProvider.swift # .cube → CGImage 40×24
+OneTake/Core/LUTs/LUTCubeLoader.swift + LUTThumbnailProvider.swift # Adobe-text/raw-binary .cube → CGImage 40×24
+tools/generate_luts.py # 6 parametric SIZE-32 grades → OneTake/Resources/*.cube
 OneTake/Core/Export/ExportService.swift # passthrough / colorCube / composition
 OneTake/Features/Studio/*             # StudioView, CaptureService, CameraPreviewView, PrompterView, etc.
 OneTake/Features/Studio/Reaction/*    # ReactionStudioView(+Components), ReactionCaptureService (movie capture), ReactionExportJob, Compositor, Mixer, BG source
@@ -132,8 +136,8 @@ Current: `unified-tabs-lut-preview-blade-trim` (17/17) + `bottom-nav-studio-flow
 
 **Q: Where does a new model go?** `Core/Persistence/Script.swift` alongside `Script`/`Take`/`ScriptCategory`. Additive field? Follow `docs/PERSISTENCE.md` §4 (default/Optional, no schema change). New model or destructive change? Add a version + stage in `Core/Persistence/Schema.swift` per `docs/PERSISTENCE.md` §5. Ad-hoc `modelContainer(for:)` previews/tests are unaffected by versioning.
 
-**Q: How does blade export work?** `Take.bladeSegments()` → `ExportService.exportTake` builds `AVMutableComposition` + `AVVideoComposition` with `CIFilter.colorCube` only when needed. See `docs/ARCHITECTURE.md` §5 (Persistence) + §6 (Export).
+**Q: How does blade export work?** `Take.bladeSegments()` (stored `segmentsJSON` ranges clipped to trim, legacy `bladeCuts` fallback) → `ExportService.exportTake` builds `AVMutableComposition` + `AVVideoComposition` with `CIFilter.colorCube` only when needed. See `docs/ARCHITECTURE.md` §5 (Persistence) + §6 (Export).
 
 ---
 
-*Last updated: 2026-09-06 — after `capture-first-reaction-pipeline` (post-capture export job replaces realtime engine + lint/docs pass). Keep this file short, linked, and honest.*
+*Last updated: 2026-09-06 — during `onboarding-terms-paywall` (RevenueCat paywall + terms + onboarding v2; owner Terms content + dashboard pending). Keep this file short, linked, and honest.*

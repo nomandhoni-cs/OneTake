@@ -28,18 +28,34 @@ enum Route: Hashable {
 }
 
 struct ContentView: View {
-    /// First-launch onboarding — root switch (not a cover) so there are no
-    /// gesture-dismiss edge cases; `OnboardingView` flips the flag to finish.
-    @AppStorage("hasSeenOnboarding")
-    private var hasSeenOnboarding = false
+    /// Versioned first-run gate (guidelines §15: decision surfaces, not a
+    /// tutorial): fresh installs walk onboarding, legal bumps force a
+    /// terms-only pass, everyone else lands straight in the shell.
+    @AppStorage("completedOnboardingVersion")
+    private var completedVersion = 0
+    @AppStorage("acceptedLegalVersion")
+    private var acceptedLegalVersion = 0
+    @Environment(\.scenePhase)
+    private var scenePhase
+    @Environment(ProEntitlementService.self)
+    private var pro
 
     var body: some View {
-        if !hasSeenOnboarding {
-            OnboardingView()
-        } else if ENABLE_TAB_SHELL {
-            RootTabView()
-        } else {
-            LegacyContentView()
+        Group {
+            if OnboardingFlow.needsOnboarding(completedVersion: completedVersion, acceptedLegalVersion: acceptedLegalVersion) {
+                OnboardingView()
+            } else if ENABLE_TAB_SHELL {
+                RootTabView()
+            } else {
+                LegacyContentView()
+            }
+        }
+        // Converge cached Pro state to server truth at launch + foreground.
+        .task { await pro.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await pro.refresh() }
+            }
         }
     }
 }

@@ -13,8 +13,7 @@ final class CategoryUITests: XCTestCase {
     func testCreateCategoryFromEditorAndFilterLibrary() {
         let app = XCUIApplication()
         app.launch()
-
-        dismissOnboardingIfNeeded(app)
+        ensurePastOnboarding(app)
 
         // 1. Go to the Scripts tab.
         let scriptsTab = app.buttons["Scripts"]

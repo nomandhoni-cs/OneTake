@@ -16,12 +16,28 @@
 //  - To evolve models, see docs/PERSISTENCE.md (never edit a released version).
 //
 //  See: docs/ARCHITECTURE.md §3 (App Lifecycle) + AGENTS.md §3
+import RevenueCat
 import SwiftData
 import SwiftUI
 
 /// OneTake app — hosts the SwiftData container and root view.
 @main
 struct OneTakeApp: App {
+    @State private var pro = ProEntitlementService()
+
+    init() {
+        // RevenueCat (SwiftUI doc, Option 1): configure once at launch when the
+        // owner key is set; the service stays locked (non-pro) without it.
+        if StoreIDs.isConfigured {
+            Purchases.configure(withAPIKey: StoreIDs.revenueCatAPIKey)
+            #if DEBUG
+                Purchases.logLevel = .debug
+            #endif
+        } else {
+            debugPrint("[Paywall] StoreIDs.revenueCatAPIKey is empty — Pro stays locked.")
+        }
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(versionedSchema: OneTakeSchemaV1.self)
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
@@ -38,6 +54,7 @@ struct OneTakeApp: App {
             ContentView()
                 // Brand accent (#195636) for every control app-wide.
                 .tint(.appAccent)
+                .environment(pro)
         }
         .modelContainer(sharedModelContainer)
     }

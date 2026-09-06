@@ -51,7 +51,10 @@ See `docs/GETTING_STARTED.md` for detailed setup, `docs/ARCHITECTURE.md` for the
 - [Getting Started](docs/GETTING_STARTED.md) — build, run, test, lint/format, simulator tips
 - [Code Map](docs/CODEMAP.md) — every folder/file and what it owns
 - [Persistence](docs/PERSISTENCE.md) — data contract: models, store layout, migration rules
+- [SwiftUI Guidelines](docs/SWIFTUI_GUIDELINES.md) — **read before implementing any view**: HIG design principles, iOS patterns, pre-implementation gate, code rules, Definition of Done
 - [Lint Report](docs/LINT_REPORT.md) — best-practice audit (0 violations), before/after, remaining plan
+- [Pricing](docs/PRICING.md) — monetization plan (7-day trial + $12.99/yr / $1.99/mo / $39.99 lifetime); paywall implemented via RevenueCat
+- [Store Setup](docs/STORE_SETUP.md) — owner checklist: App Store Connect + RevenueCat dashboard + legal content + sandbox QA
 - [OpenSpec](openspec/) — spec-driven changes (`unified-tabs-lut-preview-blade-trim`, `bottom-nav-studio-flow`)
 
 ## License
