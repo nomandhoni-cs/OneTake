@@ -28,8 +28,15 @@ enum Route: Hashable {
 }
 
 struct ContentView: View {
+    /// First-launch onboarding — root switch (not a cover) so there are no
+    /// gesture-dismiss edge cases; `OnboardingView` flips the flag to finish.
+    @AppStorage("hasSeenOnboarding")
+    private var hasSeenOnboarding = false
+
     var body: some View {
-        if ENABLE_TAB_SHELL {
+        if !hasSeenOnboarding {
+            OnboardingView()
+        } else if ENABLE_TAB_SHELL {
             RootTabView()
         } else {
             LegacyContentView()

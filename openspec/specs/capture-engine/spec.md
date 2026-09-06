@@ -1,7 +1,7 @@
 # capture-engine Specification
 
 ## Purpose
-TBD - created by archiving change modern-apple-api-features. Update Purpose after archive.
+Front-camera capture session with resolution/frame-rate/HDR selection, exposure lock, mirroring, pause/resume lifecycle, and the capture-first reaction movie-file path.
 ## Requirements
 ### Requirement: Hardware capture session with resolution and frame rate selection
 The system SHALL provide a front-camera `AVCaptureSession` supporting exact resolution selection of 1080p FHD (1920×1080) and 4K UHD (3840×2160) at 24 fps (Film), 30 fps (Standard), and 60 fps (Smooth), configured via `AVCaptureDevice.Format` and `activeVideoMin/MaxFrameDuration`. Camera format controls (resolution / frame rate / HDR) SHALL be presented only in the Studio settings bottom sheet; when recording or paused those controls SHALL be disabled with an explanatory caption ("Stop recording to change camera format"), while mirror / aspect / countdown toggles remain live; unsupported combinations SHALL be disabled with an explanatory label.
@@ -77,3 +77,25 @@ The system SHALL support pause/resume for `AVCaptureMovieFileOutput` using `paus
 #### Scenario: Fallback segment merge on old OS
 - **WHEN** `pauseRecording` is unavailable and the user pauses then resumes
 - **THEN** the system records to sequential segment files and on Stop merges them into one MP4 via composition
+
+### Requirement: Reaction capture via standard movie-file path
+The system SHALL record reaction camera footage (front camera + mic) with
+`AVCaptureMovieFileOutput` under teleprompter semantics — pause/resume with
+single merged file and no orphans, backgrounding/interruption auto-finalize,
+and format controls disabled while recording or paused — while the BG media
+plays independently for the performer. The realtime composited-writer
+recording path SHALL NOT be used. BG transport (restart/replace) SHALL be
+preview-only and disabled during recording so the camera-to-BG timeline mapping
+stays linear.
+
+#### Scenario: Reaction pause behaves like teleprompter pause
+- **WHEN** the user pauses then resumes a reaction recording
+- **THEN** the raw camera file pauses and resumes with prompter scroll frozen, producing one continuous file
+
+#### Scenario: Backgrounding finalizes safely
+- **WHEN** the app backgrounds mid-reaction-recording
+- **THEN** the raw file finalizes without corruption and offers processing on return
+
+#### Scenario: BG controls lock during recording
+- **WHEN** recording starts with a BG video playing
+- **THEN** Restart/replace BG controls disable with a caption and re-enable on stop

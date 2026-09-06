@@ -76,19 +76,22 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 |-----|---------|------|
 | My Takes | `MyTakesView()` | `takesPath` |
 | Scripts | `ScriptsTab(path: $scriptsPath)` → `ScriptLibraryView` + destinations | `scriptsPath` |
-| **Studio** | `StudioTab(path: $studioPath)` → `StudioView` | `studioPath` |
+| **Studio** | `StudioTab(path: $studioPath)` → `StudioModePicker` → `fullScreenCover` (`StudioView` / `ReactionStudioView`) | `studioPath` |
 | Profile | `ProfileView()` | `profilePath` |
 
 - Per-tab `NavigationPath`s preserve stacks across tab switches.
-- **Deep links:** `Notification.Name.showStudio` (posted by `ScriptEditorSheet` "Record with Prompter") now sets `selectedTab = .studio` (not a `fullScreenCover`). `lastScriptID` seeds `StudioView`'s selector.
-- **Lifecycle guard:** `onChange(selectedTabRaw)` intercepts leaving `.studio` while `isStudioRecording == true`, reverts, and shows `confirmationDialog` ("Stay" / "Leave & Keep Paused"). `StudioView` publishes the flag via `@AppStorage("studioIsRecording")` on `isRecordingOrPaused` change and clears on `onDisappear`.
+- **Studio picker:** the Studio tab shows two mode cards (Teleprompter / Reaction, 44pt + VoiceOver); each opens full-screen via `fullScreenCover` (tab bar hidden) and dismisses back to the picker with `studioPath` preserved.
+- **Deep links:** `Notification.Name.showStudio` (posted by `ScriptEditorSheet` "Record with Prompter") sets `selectedTab = .studio`; while a mode is recording the request is a no-op so the session is never interrupted. `lastScriptID` seeds `StudioView`'s selector.
+- **Lifecycle guard:** `onChange(selectedTabRaw)` intercepts leaving `.studio` while `isStudioRecording == true`, reverts, and shows `confirmationDialog` ("Stay" / "Leave & Keep Paused"). Both `StudioView` and `ReactionStudioView` publish the flag via `@AppStorage("studioIsRecording")` and clear on `onDisappear`.
 - **Dead code removed:** `BottomPillBar`, `StudioToolbarButton`, `StudioCover` (previously the sheet) and the trailing `HStack` overlay were deleted; Studio is now a native tab.
 
 **Related:** `ContentView.swift` defines `ENABLE_TAB_SHELL`, `Notification.Name.showStudio`, `Route` (`studio(Script.ID)`, `review(Take.ID)`), and the legacy `ScriptLibraryView` (now category-aware).
 
 ## 5. Persistence — `Core/Persistence`
 
-**Files:** `Script.swift` (models + `LUTPreset`), `CadenceViewModel.swift`, `AppTheme.swift`
+> Data contract lives in [PERSISTENCE.md](PERSISTENCE.md) (model catalog, store layout, migration rules). This section summarizes.
+
+**Files:** `Script.swift` (models + `LUTPreset`), `Schema.swift` (`OneTakeSchemaV1` + `OneTakeMigrationPlan`), `CadenceViewModel.swift`, `AppTheme.swift`
 
 ### Models
 
@@ -119,6 +122,8 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
     var trimStartSeconds, trimDurationSeconds: Double?
     var bladeCuts: [Double]?        // sorted seconds, optional — nil = single segment
     var lutPreset: String           // LUTPreset.rawValue
+    var isReaction: Bool = false    // Reaction Studio composite (additive, default false)
+    var backgroundAssetLocalID: String? // Photos ID of BG media (metadata only)
     var script: Script?
     var fileURL: URL { /* relative → absolute */ }
     var trimRange: CMTimeRange? { /* Double ↔ CMTime */ }
@@ -129,6 +134,7 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 
 - `Take.relativeFilePath` survives app updates (container URL changes).
 - `Take.bladeCuts` is the blade feature's lightweight model: optional `[Double]` (additive, so lightweight migration), sorted, deduped within 0.1s, clamped to `trimRange`. `bladeSegments()` derives `[CMTimeRange]` for composition.
+- `Take.isReaction` / `backgroundAssetLocalID` follow the same additive pattern (defaults `false`/`nil`) — old stores migrate lightly; the composited MP4 is self-contained and flows through blade/trim/LUT/export unchanged.
 - `Script.displayTitle` helpers, `ScriptCategory` curated icons (`CategoryStyle` in `ScriptCategoryViews.swift`).
 
 ### Cadence
@@ -146,7 +152,7 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 - `@Query(sort: \Take.createdAt, order: .reverse)` + `@Query scripts` for `resolvedTitle(for:)`
 - `filteredTakes` (search over title + `script?.category?.name`)
 - `grouped` by day (`Today`/`Yesterday`/date) via `Dictionary(grouping:)` + sorted keys
-- Row: `MyTakesRow` (thumbnail placeholder, title, `clock` duration, `Trimmed`/`LUT` badges, file-missing capsule)
+- Row: `MyTakesRow` (thumbnail placeholder, title, `clock` duration, `Trimmed`/`LUT`/`Reaction` badges, file-missing capsule)
 - **Swipe:** trailing Delete (destructive → `confirmationDialog`), leading Edit → `Route.review`
 - **Context menu (grouped):** `Section("Adjust")` Trim (push Review), Blade Split at mid, Delete Last Segment; `Section("Color")` LUT submenu with `LUTSwatchView`; `Section("Output")` Share + Delete Take. Same grouping is mirrored in Review's toolbar.
 - Blade helpers: `bladeSplitTake(_:)` (mid of trim), `deleteLastBladeSegment(of:)` — mutate `take.bladeCuts` and `modelContext.save()`.
@@ -166,8 +172,9 @@ enum AppTab: String, CaseIterable { takes, scripts, studio, profile }
 |------|------|
 | `StudioView.swift` | Full-screen camera. `@State` for `resolution`/`frameRate`/`aspect`/`mirror`/`countdown` (backed by `@AppStorage`), prompter tweak state (`speed`/`fontSize`/`backdropOpacity`), recording state (`isRecording`/`isPaused`/`isCountdown`/`elapsedSeconds`), services (`CaptureService`, `AudioSessionService`, `HapticsService`, `RecordingActivityService`, `ThermalMonitor`). Restores `selectedScriptID` from `initialScriptID` or `lastScriptIDStorage`. Publishes `studioIsRecording` via `@AppStorage`. Top bar: back control (`StudioBackButton` when `showsDismissButton`) + `ScriptSelectorView` + gear → `StudioSettingsSheet`. Overlays: `AspectMaskView`, paused dim, `CountdownView`, thermal banner. Bottom: `VUMeterView` + `recordingControls` + `appSecondary` REC capsule. Dismiss via `requestDismiss()` with `confirmationDialog` for active recording. |
 | `CaptureService.swift` / `CaptureService+Delegate.swift` | `AVCaptureSession` lifecycle, `configure(resolution:frameRate:enableHDR:)`, `supportedCombinations()`, `start/stop/pause/resumeRecording(lockExposure:)`, `finalizeSegmentsIfNeeded`. |
-| `CameraPreviewView.swift` | `UIViewRepresentable` wrapping `AVCaptureVideoPreviewLayer`, plus `CameraPreviewPlaceholder` for simulator. |
-| `PrompterView.swift`, `CountdownView.swift`, `VUMeterView.swift`, `AspectMaskView.swift`, `TweakTrayView.swift`, `StudioSettingsSheet.swift`, `ThermalMonitor.swift`, `StudioSettings.swift` | Prompter scrolling, 3-2-1 countdown, VU meter, aspect masks, settings bottom sheet, thermal downgrade. |
+| `CameraPreviewView.swift` | `UIViewRepresentable` wrapping `AVCaptureVideoPreviewLayer` (production AVFoundation on every target; no preview mocks — without camera hardware the layer simply stays black). |
+| `PrompterView.swift`, `CountdownView.swift`, `VUMeterView.swift`, `AspectMaskView.swift`, `TweakTrayView.swift`, `StudioSettingsSheet.swift`, `ThermalMonitor.swift`, `StudioSettings.swift` | Prompter scrolling, 3-2-1 countdown, VU meter, aspect masks, settings bottom sheet (`isReaction` hides format/HDR/aspect with SDR caption), thermal downgrade. |
+| `Reaction/` (`ReactionModels`, `BackgroundSource`, `PersonSegmenter`, `ReactionCompositor`, `ReactionExportJob`, `ReactionCaptureService`, `ReactionStudioView`, `ReactionStudioComponents`, `ProcessingView`, `BackgroundPlayerView`) | Reaction Studio (capture-first): Photos BG pick (`PHPickerViewController`, DRM reject) → plain movie-file camera capture (teleprompter semantics, BG transport locked while recording) → post-capture export (`VNSequenceRequestHandler` `.accurate` + fps-probe downgrade, compositor silhouettes/circle/split + glow, offline lookahead-ducked mic/BG mix) → single MP4 `Take(isReaction:)`. Framing preview = BG layer + live camera rect (no inference during capture); progress/cancel/retry UI with temp lifecycle + free-space precheck + BG-task assertion. |
 
 ### `Features/Review/` — Review & Edit
 
@@ -229,7 +236,7 @@ User creates Script (ScriptLibraryView + Button → ModelContext.insert → @Que
 | `OneTakeTests` | `TakesLibraryTests.swift` | `ScriptSelectorView.resolveTitle`, My Takes search/filter, day grouping, delete cleanup, `CaptureService` pause/resume |
 | `OneTakeUITests` | `OneTakeUITests.swift` + `CategoryUITests.swift` | Launch, `testCreateCategoryFromEditorAndFilterLibrary` (create script → "New Category…" → chip appears → filter) |
 
-Run: `xcodebuild test -project OneTake.xcodeproj -scheme OneTake -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:OneTakeTests` → **33 tests passed** (last run: 7 Blade + 8 Category + 18 others). UI tests: 1 passed.
+Run: `xcodebuild test -project OneTake.xcodeproj -scheme OneTake -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:OneTakeTests` → **62 tests passed** (Blade + Category + Takes + Reaction/Export/Position suites). UI tests: 2 passed (Reaction + Teleprompter studio flows).
 
 ## 9. Build & Tooling
 

@@ -20,6 +20,7 @@
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | **Deep dive:** layers, app lifecycle, navigation (4-tab), persistence (`Script`/`Take`/`ScriptCategory` + `bladeCuts`), features, `Core/*` services, theme, testing, OpenSpec | Before touching `RootTabView`, `Script.swift`, or `ExportService` |
 | **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** | Prerequisites, `open *.xcodeproj`, CLI `xcodebuild build/test`, `swiftlint`/`swiftformat`, simulator tips | Setup, running, troubleshooting |
 | **[docs/CODEMAP.md](docs/CODEMAP.md)** | **File-by-file map:** `OneTake/` target, `OneTakeTests/`, `OneTakeUITests/`, `openspec/`, `OneTake.xcodeproj` | To find *where* a responsibility lives |
+| **[docs/PERSISTENCE.md](docs/PERSISTENCE.md)** | **Data contract:** model catalog, store/file layout, migration rules, add-a-field checklist, version playbook | Before touching models, `Schema.swift`, or the store |
 | **[docs/LINT_REPORT.md](docs/LINT_REPORT.md)** | Best-practice audit: current `0 violations`, before/after, auto-fix vs manual, remaining warnings plan | Before committing, or to understand lint config |
 | **`openspec/specs/`** (7 canonical) | `audio-settings-intents`, `cadence-engine`, `capture-engine`, `live-recording-hud`, `prompter-studio`, `script-workspace`, `trim-color-export` | To understand *what* the system shall do |
 | **`openspec/changes/`** (2) | `bottom-nav-studio-flow` (prior), `unified-tabs-lut-preview-blade-trim` (17 tasks, 4-tab + LUT swatches + blade) | To see *why/how* a feature was built |
@@ -52,16 +53,17 @@ Full diagram + data-flow (Script → Studio → Take → Review) in **[docs/ARCH
 ```
 OneTake/OneTakeApp.swift              # @main, Schema, WindowGroup
 OneTake/ContentView.swift             # ENABLE_TAB_SHELL, Route, ScriptLibraryView + ScriptRow
-OneTake/RootTabView.swift             # AppTab (4 cases), RootTabView, ScriptsTab, StudioTab
-OneTake/Core/Persistence/Script.swift # Script, ScriptCategory, Take (bladeCuts), LUTPreset
+OneTake/RootTabView.swift             # AppTab (4 cases), RootTabView, StudioTab (mode picker), ScriptsTab
+OneTake/Core/Persistence/Script.swift # Script, ScriptCategory, Take (bladeCuts, isReaction), LUTPreset
 OneTake/Core/Theme/AppTheme.swift     # Color tokens
 OneTake/Core/LUTs/LUTCubeLoader.swift + LUTThumbnailProvider.swift # .cube → CGImage 40×24
 OneTake/Core/Export/ExportService.swift # passthrough / colorCube / composition
 OneTake/Features/Studio/*             # StudioView, CaptureService, CameraPreviewView, PrompterView, etc.
+OneTake/Features/Studio/Reaction/*    # ReactionStudioView(+Components), ReactionCaptureService (movie capture), ReactionExportJob, Compositor, Mixer, BG source
 OneTake/Features/Takes/MyTakesView.swift # Takes list + blade + grouped context menu
 OneTake/Features/Review/*             # ReviewView (blade-aware player/trim/LUT/export), TrimScrubberView (blade UI)
 OneTake/Features/Workspace/*          # ScriptEditorSheet, ScriptCategoryViews (kit)
-OneTakeTests/*                        # BladeEditingTests, ScriptCategoryTests, etc.
+OneTakeTests/*                        # BladeEditingTests, ScriptCategoryTests, Reaction*Tests, etc.
 ```
 
 Exhaustive table: **[docs/CODEMAP.md](docs/CODEMAP.md)**.
@@ -84,7 +86,7 @@ xcodebuild -project OneTake.xcodeproj -scheme OneTake \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath /tmp/OneTakeDD build
 xcodebuild test -project OneTake.xcodeproj -scheme OneTake \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:OneTakeTests # 33 passed
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:OneTakeTests # 62 passed
 ```
 
 Config: [`.swiftlint.yml`](.swiftlint.yml) (opt-in `force_unwrapping` etc., `file_length` 700/900, `type_body_length` 650/800, `function_body_length` 85/150) + [`.swiftformat`](.swiftformat) (4-space, 140 maxwidth). See **[docs/LINT_REPORT.md](docs/LINT_REPORT.md)** for triage.
@@ -128,10 +130,10 @@ Current: `unified-tabs-lut-preview-blade-trim` (17/17) + `bottom-nav-studio-flow
 
 **Q: Where do I add a new tab?** `RootTabView.swift` → `AppTab` + `Tab(...)` + `NavigationPath` + `selectedTab` handling. Keep HIG ≤5. See `docs/ARCHITECTURE.md` §4.
 
-**Q: Where does a new model go?** `Core/Persistence/Script.swift` alongside `Script`/`Take`/`ScriptCategory`, add to `Schema([...])` in `OneTakeApp` and all 17 `modelContainer(for:)` previews/tests. See `docs/CODEMAP.md` → Core/Persistence.
+**Q: Where does a new model go?** `Core/Persistence/Script.swift` alongside `Script`/`Take`/`ScriptCategory`. Additive field? Follow `docs/PERSISTENCE.md` §4 (default/Optional, no schema change). New model or destructive change? Add a version + stage in `Core/Persistence/Schema.swift` per `docs/PERSISTENCE.md` §5. Ad-hoc `modelContainer(for:)` previews/tests are unaffected by versioning.
 
 **Q: How does blade export work?** `Take.bladeSegments()` → `ExportService.exportTake` builds `AVMutableComposition` + `AVVideoComposition` with `CIFilter.colorCube` only when needed. See `docs/ARCHITECTURE.md` §5 (Persistence) + §6 (Export).
 
 ---
 
-*Last updated: 2026-09-02 — after `unified-tabs-lut-preview-blade-trim` + lint/docs pass. Keep this file short, linked, and honest.*
+*Last updated: 2026-09-06 — after `capture-first-reaction-pipeline` (post-capture export job replaces realtime engine + lint/docs pass). Keep this file short, linked, and honest.*

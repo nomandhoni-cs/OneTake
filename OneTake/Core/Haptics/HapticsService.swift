@@ -13,12 +13,10 @@ final class HapticsService {
     private var supportsHaptics = false
 
     init() {
-        #if !targetEnvironment(simulator)
-            supportsHaptics = CHHapticEngine.capabilitiesForHardware().supportsHaptics
-            if supportsHaptics {
-                prepareEngine()
-            }
-        #endif
+        supportsHaptics = CHHapticEngine.capabilitiesForHardware().supportsHaptics
+        if supportsHaptics {
+            prepareEngine()
+        }
     }
 
     private func prepareEngine() {
@@ -40,28 +38,16 @@ final class HapticsService {
     }
 
     func prewarm() {
-        #if !targetEnvironment(simulator)
-            if engine == nil, CHHapticEngine.capabilitiesForHardware().supportsHaptics {
-                prepareEngine()
-            } else {
-                try? engine?.start()
-            }
-        #endif
+        if engine == nil, CHHapticEngine.capabilitiesForHardware().supportsHaptics {
+            prepareEngine()
+        } else {
+            try? engine?.start()
+        }
     }
 
     // MARK: - Countdown pattern: 3, 2 transient; GO continuous burst
 
     func playCountdownTick(isFinal: Bool = false) {
-        #if targetEnvironment(simulator)
-            // Fallback only on simulator
-            if isFinal {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-            } else {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            }
-            return
-        #endif
-
         if supportsHaptics, let engine {
             do {
                 if isFinal {

@@ -9,8 +9,8 @@
 | Path | Owns |
 |------|------|
 | `OneTake/OneTakeApp.swift` | `@main` — `ModelContainer(Schema([Script, Take, ScriptCategory]))`, `WindowGroup { ContentView().tint(.appAccent) }` |
-| `OneTake/ContentView.swift` | `ENABLE_TAB_SHELL` flag, `Notification.Name.showStudio`, `Route` (`studio`/`review`), `ContentView` switch, `LegacyContentView`, `ScriptLibraryView` (search, filter chips, sort `Menu`, grouped `List` by category, `CategoryFilterBar`/`CategorySectionHeader`/`ScriptRow`/`ScriptSortMode`/`CategoryFilterBar`, swipe + `contextMenu` Move to Category, `ManageCategoriesSheet` sheet, delete `confirmationDialog`), `ScriptRow` (title/body/date + `waveform` word count + `CategoryBadge`) |
-| `OneTake/RootTabView.swift` | `AppTab` (`takes, scripts, studio, profile`), `RootTabView` (4-tab `TabView(sidebarAdaptable)`, per-tab `NavigationPath`s, `@SceneStorage` + `@AppStorage(studioIsRecording)` + `pendingTab`/`showLeaveConfirm` guard, `onReceive(.showStudio)` → `selectedTab=.studio`), `ScriptsTab`, `StudioTab`, `StudioDestination`/`ReviewDestination` |
+| `OneTake/ContentView.swift` | `ENABLE_TAB_SHELL` flag, first-launch gate (`@AppStorage hasSeenOnboarding` → `OnboardingView`), `Notification.Name.showStudio`, `Route` (`studio`/`review`), `ContentView` switch, `LegacyContentView`, `ScriptLibraryView` (search, filter chips, sort `Menu`, grouped `List` by category, `CategoryFilterBar`/`CategorySectionHeader`/`ScriptRow`/`ScriptSortMode`/`CategoryFilterBar`, swipe + `contextMenu` Move to Category, `ManageCategoriesSheet` sheet, delete `confirmationDialog`), `ScriptRow` (title/body/date + `waveform` word count + `CategoryBadge`) |
+| `OneTake/RootTabView.swift` | `AppTab` (`takes, scripts, studio, profile`), `RootTabView` (4-tab `TabView(sidebarAdaptable)`, per-tab `NavigationPath`s, `@SceneStorage` + `@AppStorage(studioIsRecording)` + `pendingTab`/`showLeaveConfirm` guard, `onReceive(.showStudio)` → `selectedTab=.studio` (no-op while recording)), `ScriptsTab`, `StudioTab` (2-card `StudioModePicker` + `fullScreenCover` modes), `StudioDestination`/`ReviewDestination` |
 | `OneTake/Info.plist` | `NSCameraUsageDescription` etc., `NSSupportsLiveActivities` |
 
 ## Core
@@ -33,7 +33,7 @@
 
 | File | Owns |
 |------|------|
-| `StudioView.swift` (450 lines, `// swiftlint:disable file_length type_body_length`) | Full-screen camera: `@AppStorage` resolution/frameRate/mirror/countdown/aspect/`lastScriptID` + `studioIsRecording` flag, `@State` tweak state + `isRecording`/`isPaused`/`elapsedSeconds`/`captureService` etc., `showsDismissButton` (hidden in tab), top bar (`StudioBackButton` + `ScriptSelectorView` + gear → `StudioSettingsSheet`), `cameraLayer` (`CameraPreviewView` or placeholder), `prompterSection`, `VUMeterView`, `recordingControls` (mic route + record/pause/resume/stop + `appSecondary` REC capsule), `isRecordingOrPaused` → `studioIsRecordingFlag` + `onChange(scenePhase)` stop on background, `confirmationDialog` for discard |
+| `StudioView.swift` (450 lines, `// swiftlint:disable file_length type_body_length`) | Full-screen camera: `@AppStorage` resolution/frameRate/mirror/countdown/aspect/`lastScriptID` + `studioIsRecording` flag, `@State` tweak state + `isRecording`/`isPaused`/`elapsedSeconds`/`captureService` etc., `showsDismissButton` picks chrome (modal: `safeAreaInset` row with plain close/script/settings glyphs; pushed: parent bar + script/settings items), `studioContent` (camera, prompter, meter, controls, REC capsule), `isRecordingOrPaused` → `studioIsRecordingFlag` + `onChange(scenePhase)` stop on background, `confirmationDialog` for discard |
 | `CameraPreviewView.swift` | `UIViewRepresentable` for `AVCaptureVideoPreviewLayer` |
 | `CaptureService.swift` + `CaptureService+Delegate.swift` | `AVCaptureSession` setup, `supportedCombinations()`, `configure`, `startSession`/`stopSession`/`startRecording`/`pause`/`resume`/`stopRecording`/`finalizeSegmentsIfNeeded` |
 | `PrompterView.swift` | Scrolling `Text` at `speed` |
@@ -41,15 +41,25 @@
 | `VUMeterView.swift` | VU bars (`i` excluded via `// swiftlint`? single-letter) |
 | `AspectMaskView.swift` | Aspect overlays |
 | `TweakTrayView.swift` | Slider tray |
-| `StudioSettingsSheet.swift` | Bottom sheet for resolution/frameRate/HDR/mirror/countdown/aspect/speed/font/opacity |
-| `ScriptSelectorView.swift` | `Menu` grouped by category (`@Query categories`, `groupedEntries`, `scriptButton`), `currentTitle`, `resolveTitle(for:scripts:)` static for tests |
-| `ThermalMonitor.swift` | `shouldDowngrade` |
+| `StudioSettingsSheet.swift` | Bottom sheet for resolution/frameRate/HDR/mirror/countdown/aspect/speed/font/opacity (`isReaction` hides format/HDR/aspect, shows SDR caption) + reaction bundle (`ReactionSheetBindings`): ranked Cutout (layout + outline) → 3×3 `PresenterPositionGrid` + Audio (live mic meter, volume, duck, mute) → Notes → Camera, with Done button |
+| `ScriptSelectorView.swift` | `Menu` grouped by category (`@Query categories`, `groupedEntries`, `scriptButton`), `currentTitle`, `resolveTitle(for:scripts:)` static for tests. Reused by `ReactionStudioView` (freestyle default). |
+| `ThermalMonitor.swift` | `shouldDowngrade` (reaction halves segmentation cadence) |
+| `Reaction/ReactionModels.swift` | `StudioMode` (picker), `ReactionLayout`, `ReactionOutline`, `ReactionPresenterDefaults` (unit-rect persistence), `PresenterPosition` (9-cell grid snap presets, tested) |
+| `Reaction/BackgroundSource.swift` | `BackgroundMedia`, `BackgroundSource` (`AVPlayer` playback, `loopEnabled` hold-last-frame while recording, DRM `validateVideo`), `BackgroundPickerView` (`PHPickerViewController` wrapper), `BackgroundPlayerView` (`AVPlayerLayer` representable) |
+| `Reaction/PersonSegmenter.swift` | `MaskProviding` protocol + `PersonSegmenter` (`.accurate` default, runtime format via `supportedOutputPixelFormats()`, sync `mask(from:using:)` for the export job) |
+| `Reaction/ReactionCompositor.swift` | `ReactionStyle`, `ReactionCanvasGeometry` (pure, tested), `ReactionCompositor` (Metal `CIContext`, `CIBlendWithMask`, circle/split, dilated-mask glow, canvas crop) |
+| `Reaction/ReactionAudioMixer.swift` | `ReactionDucking` (attack 150ms/release 800ms, tested), `LookaheadDucker` (offline anticipation, tested), `PCMChunker`, `ReactionVAD`, `ReactionAudioMixer` (export settings), `PCMSampleBufferFactory` |
+| `Reaction/ReactionExportJob.swift` | `ReactionExportInput/Result/Error`, `ReactionExportJob` (worker-queue reader → segment → composite → writer, `FPSProbe` downgrade, progress/cancel, temp cleanup), `VideoPass`, `BGTimeline` (loop/trim mapping, tested) |
+| `Reaction/ReactionCaptureService.swift` | `@Observable @MainActor` orchestration: composes `CaptureService` movie capture, BG playback, `AudioSessionService` mic metering, export lifecycle (`PendingExport`, progress, retry/discard, space precheck, BG task), `studioIsRecording` flag source |
+| `Reaction/ReactionStudioView.swift` | Full-screen reaction UI with a `safeAreaInset` chrome row (plain close/script/settings glyphs, no toolbar glass), framing preview (BG layer + live camera rect/half/fullscreen), collapsible `PrompterView` overlay (slim pill when freestyle), pending banner, `ProcessingView` flow, BG transport lock, `Take(isReaction:)` save (cutout/audio controls live in settings) |
+| `Reaction/ReactionStudioComponents.swift` | Extracted bars/cards (top, paused, empty state, pending, gestures, cutout, audio, transport) — keeps view under `file_length` |
+| `Reaction/ProcessingView.swift` | Export progress overlay with cancel |
 
 ### `Features/Takes/` + `Features/Review/`
 
 | File | Owns |
 |------|------|
-| `MyTakesView.swift` | `@Query takes` + `scripts` for title, `searchText`, `navigationPath`, `showStudio` (Freestyle cover, now secondary to tab), `grouped` by day, `filteredTakes` (title + category name search), row `Button` → `MyTakesRow` + **grouped `contextMenu`** (`Section Adjust` Trim/Blade/Delete Last Segment, `Section Color` LUT submenu with `LUTSwatchView`, `Section Output` Share/Delete), swipe Delete/Edit, `performDelete` (segments dir + file), `bladeSplitTake`/`deleteLastBladeSegment` (mid split, `bladeCuts` sort/dedupe) |
+| `MyTakesView.swift` | `@Query takes` + `scripts` for title, `searchText` (`"reaction"` keyword filters reaction takes), `navigationPath`, `showStudio` (Freestyle cover, now secondary to tab), `grouped` by day, `filteredTakes` (title + category name search), row `Button` → `MyTakesRow` (`Reaction` badge) + **grouped `contextMenu`** (`Section Adjust` Trim/Blade/Delete Last Segment, `Section Color` LUT submenu with `LUTSwatchView`, `Section Output` Share/Delete), swipe Delete/Edit, `performDelete` (segments dir + file), `bladeSplitTake`/`deleteLastBladeSegment` (mid split, `bladeCuts` sort/dedupe) |
 | `ReviewView.swift` (652 lines, `// swiftlint:disable file_length type_body_length`) | `ScrollView` with `playerSection` (blade-aware `makePlayerItem` composition, `playheadSeconds` polled), `trimSection` (`TrimScrubberView` with `bladeCuts`/`selectedSegment`/`playheadSeconds`/`onBlade`→`splitAtPlayhead`/`onDelete`→`deleteSelectedSegment` + `onChange` prune + undo), `lutSection` (**swatch buttons** with `LUTSwatchView` + checkmark), `actionsSection` (Save as New/Replace/Save to Photos/`ShareLink`), toolbar ellipsis `Menu` (same 3 sections, disabled states), helpers `loadDuration`, `reexport`/`exportAndSave` (**blade-aware** via transient `Take` + `exportTake`), `LUTSwatchView` now shared via `LUTThumbnailProvider` |
 | `TrimScrubberView.swift` | Dual-handle scrubber (44pt) + **blade extensions**: `bladeCuts`, `selectedSegment`, `playheadSeconds`, `onBlade`/`onDeleteSegment`/`onSelectSegment`, `normalizedCuts`, `segments`, `isBladeDisabled`/`isDeleteDisabled`, cut dividers (2pt white), playhead (yellow), segment highlight (`yellow` stroke), handle drag, bottom `Blade` + `Delete Segment` buttons + segment label |
 
@@ -60,11 +70,17 @@
 | `ScriptEditorSheet.swift` | `NavigationStack` sheet: title `TextField`, `TextEditor` for body, `CategoryPickerBar` (badge + `Menu` to pick/clear/"New Category…"), bottom `SafeAreaInset` with picker bar + "Record with Prompter" |
 | `ScriptCategoryViews.swift` (567 lines, `file_length` warning) | **Category kit** — `CategoryStyle` (10 styles), `CategoryIconView` (fallback dot), `CategoryChip`/`CategoryFilterBar` (chips with count, `selectedID` binding), `CategoryBadge`, `CategoryMoveMenu`/`CategoryScriptRow`, `CategoryPickerBar` (editor bar with `showNewCategoryAlert` → `ScriptCategory`), `ManageCategoriesSheet` (`@Query categories` + `scripts` for counts, create bar, `CategoryCreateBar`, `CategoryEditSheet` (draft `@State name`/`symbol` + `onSave`/`onCancel`), delete confirm), `CategoryIconView` |
 
+### `Features/Onboarding/`
+
+| File | Owns |
+|------|------|
+| `OnboardingView.swift` | First-launch flow gated by `@AppStorage hasSeenOnboarding` (ContentView root switch): splash brand page + 3 Teach pages (`OnboardingPage`: scripts, record/react, permission rationale with real `requestAccess` that never blocks) + always-visible Skip; replay via Profile "Replay onboarding tour" |
+
 ### `Features/Profile/` + `Features/Settings/`
 
 | File | Owns |
 |------|------|
-| `ProfileView.swift` | `Form` with `CameraDefaultsDetail`/`CountdownDetail`, `Link` to Settings, `Account` placeholder, `#Preview` with `try!` (lint disabled) |
+| `ProfileView.swift` | `Form` with `CameraDefaultsDetail`/`CountdownDetail`, `Link` to Settings, `Account` placeholder, "Replay onboarding tour" row (resets `hasSeenOnboarding`), `#Preview` with `try!` (lint disabled) |
 | `StudioSettings.swift` | `Resolution`/`FrameRate`/`AspectRatio` enums, `StudioSettings` defaults |
 
 ### `AppIntents/OneTakeIntents.swift`

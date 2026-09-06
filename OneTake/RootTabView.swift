@@ -95,6 +95,12 @@ struct RootTabView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .onReceive(NotificationCenter.default.publisher(for: .showStudio)) { _ in
+            // Deep-link while a mode is recording: stay put so the session is
+            // never interrupted (tab-switch guard + in-cover discard confirm
+            // own the recording lifecycle).
+            if selectedTab.wrappedValue == .studio, isStudioRecording {
+                return
+            }
             selectedTab.wrappedValue = .studio
         }
         .onChange(of: selectedTabRaw) { oldRaw, newRaw in
@@ -143,11 +149,75 @@ private struct ScriptsTab: View {
 
 private struct StudioTab: View {
     @Binding var path: NavigationPath
+    @State private var activeMode: StudioMode?
 
     var body: some View {
         NavigationStack(path: $path) {
-            StudioView(initialScriptID: nil)
+            StudioModePicker(activeMode: $activeMode)
         }
+        // Full-screen modes hide the tab bar; dismiss returns to the picker
+        // with `path` (studioPath) state preserved.
+        .fullScreenCover(item: $activeMode) { mode in
+            switch mode {
+            case .teleprompter:
+                StudioView(initialScriptID: nil)
+            case .reaction:
+                ReactionStudioView()
+            }
+        }
+    }
+}
+
+/// Studio mode picker — two cards (Teleprompter / Reaction) per
+/// `reaction-studio` spec. Each card is a 44pt+ button with VoiceOver
+/// label/hint that opens its camera full-screen.
+private struct StudioModePicker: View {
+    @Binding var activeMode: StudioMode?
+
+    var body: some View {
+        List(StudioMode.allCases) { mode in
+            StudioModeCard(mode: mode) {
+                activeMode = mode
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
+        .listStyle(.plain)
+        .navigationTitle("Studio")
+    }
+}
+
+private struct StudioModeCard: View {
+    let mode: StudioMode
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: mode.iconName)
+                    .font(.system(size: 28))
+                    .foregroundStyle(Color.appAccent)
+                    .frame(width: 52, height: 52)
+                    .background(Color.appAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(mode.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(mode.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding()
+            .frame(minHeight: 88)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+        .accessibilityLabel(mode.title)
+        .accessibilityHint(mode.accessibilityHint)
     }
 }
 

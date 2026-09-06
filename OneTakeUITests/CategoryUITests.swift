@@ -14,6 +14,8 @@ final class CategoryUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
+        dismissOnboardingIfNeeded(app)
+
         // 1. Go to the Scripts tab.
         let scriptsTab = app.buttons["Scripts"]
         XCTAssertTrue(scriptsTab.waitForExistence(timeout: 10))

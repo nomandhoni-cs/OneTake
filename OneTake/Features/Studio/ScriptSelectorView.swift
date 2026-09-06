@@ -59,6 +59,8 @@ struct ScriptSelectorView: View {
                 }
             }
         } label: {
+            // Plain glyphs, no custom background — toolbar glass (if any) is
+            // the system's. Padding keeps a comfortable tap target.
             HStack(spacing: 6) {
                 Image(systemName: "doc.text")
                 Text(currentTitle)
@@ -68,8 +70,7 @@ struct ScriptSelectorView: View {
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(Color.black.opacity(0.55), in: Capsule())
+            .padding(.horizontal, 4).padding(.vertical, 8)
         }
         .accessibilityLabel("Select script")
         .overlay(alignment: .top) {

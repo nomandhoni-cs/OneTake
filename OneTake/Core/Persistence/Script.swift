@@ -103,6 +103,13 @@ final class Take {
     var bladeCuts: [Double]?
     var lutPreset: String
     var script: Script?
+    /// Reaction Studio marker — `true` when the file is a composited cutout
+    /// recording (person over background media). Additive with a default so
+    /// existing stores migrate lightly; old takes read as non-reaction.
+    var isReaction: Bool = false
+    /// Photos local identifier of the background clip/image used, if any.
+    /// Metadata only (badge/filter) — the composited MP4 is self-contained.
+    var backgroundAssetLocalID: String?
 
     var fileURL: URL {
         get {
@@ -137,7 +144,9 @@ final class Take {
         trimRange: CMTimeRange? = nil,
         lutPreset: String = LUTPreset.natural.rawValue,
         script: Script? = nil,
-        bladeCuts: [Double]? = nil
+        bladeCuts: [Double]? = nil,
+        isReaction: Bool = false,
+        backgroundAssetLocalID: String? = nil
     ) {
         self.id = id
         self.scriptID = scriptID
@@ -149,6 +158,8 @@ final class Take {
         self.lutPreset = lutPreset
         self.script = script
         self.bladeCuts = bladeCuts?.sorted()
+        self.isReaction = isReaction
+        self.backgroundAssetLocalID = backgroundAssetLocalID
     }
 
     nonisolated static var documentsDirectory: URL {

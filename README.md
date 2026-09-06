@@ -50,6 +50,7 @@ See `docs/GETTING_STARTED.md` for detailed setup, `docs/ARCHITECTURE.md` for the
 - [Architecture](docs/ARCHITECTURE.md) — layers, data flow, navigation (4-tab), persistence, features, `Core/*` services, theme, testing, OpenSpec
 - [Getting Started](docs/GETTING_STARTED.md) — build, run, test, lint/format, simulator tips
 - [Code Map](docs/CODEMAP.md) — every folder/file and what it owns
+- [Persistence](docs/PERSISTENCE.md) — data contract: models, store layout, migration rules
 - [Lint Report](docs/LINT_REPORT.md) — best-practice audit (0 violations), before/after, remaining plan
 - [OpenSpec](openspec/) — spec-driven changes (`unified-tabs-lut-preview-blade-trim`, `bottom-nav-studio-flow`)
 

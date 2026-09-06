@@ -50,6 +50,10 @@ struct MyTakesView: View {
     private var filteredTakes: [Take] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return takes }
+        // "reaction" keyword filters reaction takes; otherwise match titles.
+        if q.lowercased() == "reaction" {
+            return takes.filter(\.isReaction)
+        }
         return takes.filter { resolvedTitle(for: $0).localizedCaseInsensitiveContains(q) }
     }
 
@@ -330,6 +334,12 @@ private struct MyTakesRow: View {
                                 Color.orange.opacity(0.18),
                                 in: Capsule()
                             )
+                    }
+                    if take.isReaction {
+                        Text("Reaction").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).background(
+                            Color.purple.opacity(0.18),
+                            in: Capsule()
+                        )
                     }
                 }
                 Text(take.createdAt, format: Date.FormatStyle(date: .abbreviated, time: .shortened))

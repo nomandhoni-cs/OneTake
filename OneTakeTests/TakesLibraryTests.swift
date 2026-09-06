@@ -90,30 +90,24 @@ struct TakesLibraryTests {
     }
 
     @Test func pauseStateMachineSingleFileInvariant() async {
-        #if targetEnvironment(simulator)
-            // On simulator, pause is just flag, finalizeSegmentsIfNeeded returns nil -> single file invariant holds (original file)
-            let svc = CaptureService()
-            svc.pauseRecording()
-            #expect(svc.isPaused() == true)
-            svc.resumeRecording()
-            #expect(svc.isPaused() == false)
-            let url = URL(fileURLWithPath: "/tmp/dummy.mp4")
-            let merged = await svc.finalizeSegmentsIfNeeded(originalURL: url)
-            #expect(merged == nil) // no segments on simulator
-        #else
-            // Device path would test merge; gated behind TARGET_OS_SIMULATOR
-            #expect(true)
-        #endif
+        // Pause/resume only flips state without hardware; with no segments,
+        // finalize returns nil so the single-file invariant holds.
+        let svc = CaptureService()
+        svc.pauseRecording()
+        #expect(svc.isPaused() == true)
+        svc.resumeRecording()
+        #expect(svc.isPaused() == false)
+        let url = URL(fileURLWithPath: "/tmp/dummy.mp4")
+        let merged = await svc.finalizeSegmentsIfNeeded(originalURL: url)
+        #expect(merged == nil) // no segments recorded
     }
 
     @Test func captureServiceRespondsToPauseSelectors() {
-        #if targetEnvironment(simulator)
-            // Ensure no private API beyond responds(to:) — verify service exposes pause without direct selector crash
-            let svc = CaptureService()
-            // Should not crash on simulator fallback
-            svc.pauseRecording()
-            svc.resumeRecording()
-            #expect(!svc.isPaused() || svc.isPaused())
-        #endif
+        // Pause/resume must never crash, even with no active recording —
+        // only `responds(to:)` gating is used, no private API.
+        let svc = CaptureService()
+        svc.pauseRecording()
+        svc.resumeRecording()
+        #expect(!svc.isPaused() || svc.isPaused())
     }
 }

@@ -42,24 +42,4 @@ struct CameraPreviewView: UIViewRepresentable {
     }
 }
 
-#if targetEnvironment(simulator)
-    struct CameraPreviewPlaceholder: View {
-        var body: some View {
-            ZStack {
-                Color.black
-                VStack(spacing: 12) {
-                    Image(systemName: "video.slash")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.white.opacity(0.6))
-                    Text("Camera preview unavailable in Simulator")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                    Text("Run on device to test capture")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
-        }
-    }
-#endif
 // swiftlint:enable force_try force_cast force_unwrapping

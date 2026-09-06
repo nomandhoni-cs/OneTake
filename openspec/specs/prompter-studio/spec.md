@@ -1,7 +1,7 @@
 # prompter-studio Specification
 
 ## Purpose
-TBD - created by archiving change modern-apple-api-features. Update Purpose after archive.
+Floating lens-anchored teleprompter with ProMotion scrolling, live tweak tray, aspect masking, and an optional collapsible script overlay for reaction mode.
 ## Requirements
 ### Requirement: ProMotion 120 Hz smooth scrolling
 The system SHALL drive prompter text scrolling locked to the display refresh rate using `TimelineView(.animation)` (primary) with `CADisplayLink` fallback, achieving 120 Hz on ProMotion devices and eliminating frame drops. Scrolling SHALL freeze instantly when recording is paused and resume from the same offset on resume; while paused, changing speed SHALL not advance the offset.
@@ -70,3 +70,22 @@ The system SHALL provide live animated letterbox/pillarbox masks for 9:16 (Reels
 #### Scenario: Mask does not affect capture file incorrectly
 - **WHEN** user records at 9:16 and exports
 - **THEN** the saved file's dimensions or crop reflect 9:16 as indicated by the mask (either via crop metadata or post-process, as specified)
+
+### Requirement: Optional script overlay in reaction mode
+The system SHALL render the lens-anchored `.ultraThinMaterial` frosted prompter over the reaction composite with an optional script picker that defaults to "No script — Freestyle", reusing the existing selector semantics (`@AppStorage("lastScriptID")` persistence, deleted-script fallback, instant text swap without restarting capture). The prompter SHALL be collapsible: freestyle defaults to a slim "Notes (optional)" pill instead of the full prompter, picking a script expands it automatically, and a hide control collapses it on demand. Pause SHALL freeze reaction prompter scroll exactly as in teleprompter mode, and freestyle recordings SHALL produce takes with no script-bound `scriptID`.
+
+#### Scenario: Reaction with script notes
+- **WHEN** the user picks a script in Reaction mode and records
+- **THEN** the frosted prompter scrolls reaction notes above the background video while the cutout and background record underneath
+
+#### Scenario: Freestyle reaction default
+- **WHEN** the user opens Reaction mode with no script selected
+- **THEN** the notes area stays collapsed as a slim "Notes (optional)" pill (expandable on demand) and recording produces a take with nil `scriptID`
+
+#### Scenario: Notes collapse to save space
+- **WHEN** the user has no script selected (or taps Hide notes)
+- **THEN** only the slim notes pill is shown instead of the full prompter, and picking a script expands it automatically
+
+#### Scenario: Pause freezes reaction scroll
+- **WHEN** the user pauses a reaction recording while notes scroll
+- **THEN** the prompter offset freezes and resumes from the same position on resume

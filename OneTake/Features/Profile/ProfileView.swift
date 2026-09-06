@@ -18,6 +18,8 @@ struct ProfileView: View {
     @Query(sort: \Take.createdAt, order: .reverse)
     private var takes: [Take]
     @State private var path = NavigationPath()
+    @AppStorage("hasSeenOnboarding")
+    private var hasSeenOnboarding = true
 
     private var takesSummary: String {
         let count = takes.count
@@ -58,49 +60,15 @@ struct ProfileView: View {
                     Link(destination: URL(string: UIApplication.openSettingsURLString)!) {
                         Label("Privacy Settings", systemImage: "hand.raised")
                     }
+                    Button {
+                        hasSeenOnboarding = false
+                    } label: {
+                        Label("Replay onboarding tour", systemImage: "graduationcap")
+                    }
+                    .accessibilityLabel("Replay onboarding tour")
                 }
                 Section("Account") {
                     Text("Sign in — coming soon").foregroundStyle(.secondary)
-                }
-                Section("Documentation") {
-                    // Repeatedly visible on Profile — quick links for new contributors.
-                    // See AGENTS.md §2 (Documentation Map) for the full hub.
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("AGENTS.md — Start here", systemImage: "star.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Doc map, where data comes from, where code lives, how to work, lint contract.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("ARCHITECTURE.md — Deep dive", systemImage: "building.columns.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Layers, app lifecycle, 4-tab navigation, persistence (Script/Take/bladeCuts), Core services, theme.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("CODEMAP.md — File-by-file", systemImage: "map.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Every folder/file and what it owns — use to find where a responsibility lives.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("GETTING_STARTED.md — Build & test", systemImage: "hammer.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Prerequisites, open *.xcodeproj, xcodebuild, swiftlint/swiftformat, simulator tips.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("LINT_REPORT.md — Best practices", systemImage: "checkmark.shield.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Current 0 violations, triage, config (.swiftlint.yml 700/900).")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("openspec/ — Spec-driven", systemImage: "doc.text.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Specs + changes (unified-tabs-lut-preview-blade-trim 17/17).")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                 }
             }
             .listStyle(.insetGrouped)

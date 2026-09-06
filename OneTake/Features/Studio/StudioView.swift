@@ -95,7 +95,7 @@ struct StudioView: View {
         isRecording || isPaused
     }
 
-    var body: some View {
+    private var studioContent: some View {
         ZStack {
             cameraLayer
                 .overlay { AspectMaskView(ratio: aspect).allowsHitTesting(false) }
@@ -114,27 +114,6 @@ struct StudioView: View {
                 }
 
             VStack(spacing: 0) {
-                // Top bar: back + script selector + settings gear
-                HStack(spacing: 12) {
-                    if showsDismissButton {
-                        StudioBackButton(action: requestDismiss)
-                    }
-                    ScriptSelectorView(selectedID: $selectedScriptID)
-                    Spacer()
-                    Button {
-                        showSettingsSheet = true
-                    } label: {
-                        Image(systemName: "gearshape.fill").font(.body).foregroundStyle(.white).padding(10).background(
-                            Color.black.opacity(0.55),
-                            in: Circle()
-                        )
-                    }
-                    .accessibilityLabel("Camera settings")
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .safeAreaInset(edge: .top) { Color.clear.frame(height: 1) }
-
                 prompterSection
                     .padding(.horizontal)
                     .padding(.top, 8)
@@ -173,11 +152,63 @@ struct StudioView: View {
                 }.transition(.move(edge: .top))
             }
         }
-        .navigationTitle(isPaused ? "Paused" : (isRecording ? "● REC \(format(seconds: elapsedSeconds))" : "Studio"))
-        .navigationBarTitleDisplayMode(.inline)
-        // Modal presentation hides the bar (the floating back button owns
-        // dismissal). When pushed, the native bar keeps its back button.
-        .toolbar(showsDismissButton ? .hidden : .automatic, for: .navigationBar)
+    }
+
+    var body: some View {
+        Group {
+            if showsDismissButton {
+                // Fullscreen modal: system NavigationStack chrome (close +
+                // script + settings) over a transparent bar. Plain glyphs,
+                // zero custom styling.
+                NavigationStack {
+                    studioContent
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                        .toolbarColorScheme(.dark, for: .navigationBar)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button(action: requestDismiss) {
+                                    Image(systemName: "xmark")
+                                }
+                                .accessibilityLabel("Close studio")
+                            }
+                            ToolbarItem(placement: .principal) {
+                                ScriptSelectorView(selectedID: $selectedScriptID)
+                            }
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button(
+                                    action: { showSettingsSheet = true },
+                                    label: {
+                                        Image(systemName: "gearshape.fill")
+                                    }
+                                )
+                                .accessibilityLabel("Camera settings")
+                            }
+                        }
+                }
+            } else {
+                // Pushed on a Scripts stack: inherit the parent bar (system
+                // back button) and contribute script + settings items.
+                studioContent
+                    .navigationTitle(isPaused ? "Paused" : (isRecording ? "● REC \(format(seconds: elapsedSeconds))" : "Studio"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .principal) {
+                            ScriptSelectorView(selectedID: $selectedScriptID)
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(
+                                action: { showSettingsSheet = true },
+                                label: {
+                                    Image(systemName: "gearshape.fill")
+                                }
+                            )
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Camera settings")
+                        }
+                    }
+            }
+        }
         .confirmationDialog("Discard this take?", isPresented: $showDiscardConfirmation, titleVisibility: .visible) {
             Button("Discard Take", role: .destructive) {
                 Task { await discardRecording(); dismiss() }
@@ -287,15 +318,10 @@ struct StudioView: View {
         }
     }
 
-    @ViewBuilder
     // swiftlint:disable:next attributes
     private var cameraLayer: some View {
-        #if targetEnvironment(simulator)
-            CameraPreviewPlaceholder()
-        #else
-            CameraPreviewView(session: captureService.session, isMirrored: mirrorMode)
-                .ignoresSafeArea()
-        #endif
+        CameraPreviewView(session: captureService.session, isMirrored: mirrorMode)
+            .ignoresSafeArea()
     }
 
     private var prompterSection: some View {
@@ -375,21 +401,17 @@ struct StudioView: View {
     }
 
     private func configureSession() async {
-        #if targetEnvironment(simulator)
-            return
-        #else
-            let perm = captureService.checkPermission()
-            if perm == .notDetermined {
-                let granted = await captureService.requestPermission()
-                if !granted {
-                    showPermissionDenied = true; return
-                }
-            } else if perm == .denied {
+        let perm = captureService.checkPermission()
+        if perm == .notDetermined {
+            let granted = await captureService.requestPermission()
+            if !granted {
                 showPermissionDenied = true; return
             }
-            await captureService.configure(resolution: resolution, frameRate: frameRate, enableHDR: enableHDR)
-            captureService.startSession()
-        #endif
+        } else if perm == .denied {
+            showPermissionDenied = true; return
+        }
+        await captureService.configure(resolution: resolution, frameRate: frameRate, enableHDR: enableHDR)
+        captureService.startSession()
     }
 
     private func startRecordingFlow() async {
@@ -469,7 +491,7 @@ struct StudioView: View {
                     finalURL = m
                 }
             }
-            // If still no file, on simulator create dummy file check
+            // Without a file (e.g., no camera hardware), there is nothing to save.
             if FileManager.default.fileExists(atPath: finalURL.path) || wasPaused {
                 let sid = selectedScriptID ?? currentScript?.id ?? UUID()
                 let take = Take(scriptID: sid, fileURL: finalURL, duration: duration, script: scripts.first(where: { $0.id == sid }))
@@ -512,29 +534,6 @@ struct StudioView: View {
         pausedDuration = 0
         pauseStartDate = nil
         haptics.impact(style: .light)
-    }
-}
-
-/// Floating back control for the recording screen.
-///
-/// Lives in the content layer rather than the navigation bar so it stays
-/// visible over the camera preview — the same pattern as the system Camera app.
-private struct StudioBackButton: View {
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(Color.black.opacity(0.55), in: Circle())
-                .contentShape(Circle())
-        }
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
-        .accessibilityLabel("Back")
-        .accessibilityHint("Closes the camera")
     }
 }
 
