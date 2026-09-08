@@ -12,11 +12,11 @@ import Foundation
 
 // Legal URLs are optional — bundled markdown is the fallback; see docs/STORE_SETUP.md §3.
 enum LegalDocuments {
-    /// Public Terms of Service URL. Empty = bundled text only.
-    static let termsURLString = ""
+    /// Public Terms of Service URL — hosted at onetake.blinkeye.app
+    static let termsURLString = "https://onetake.blinkeye.app/terms"
 
-    /// Public Privacy Policy URL. Empty = bundled text only.
-    static let privacyURLString = ""
+    /// Public Privacy Policy URL — hosted at onetake.blinkeye.app
+    static let privacyURLString = "https://onetake.blinkeye.app/privacy"
 
     /// Bump to force re-acceptance when the documents change.
     static let currentVersion = 1

@@ -117,12 +117,15 @@ final class CaptureService: NSObject {
                         conn.automaticallyAdjustsVideoMirroring = false
                         conn.isVideoMirrored = true
                     }
-                    if enableHDR, let conn = self.movieOutput.connection(with: .video) {
-                        // HDR via connection — check at runtime; property exists on iOS 17+
-                        if conn.isVideoMirroringSupported { /* keep mirrored */ }
-                        // Use KVC-safe set if available; otherwise no-op on older OS versions
-                        if conn.responds(to: NSSelectorFromString("setVideoHDREnabled:")) {
-                            conn.setValue(true, forKey: "videoHDREnabled")
+                    if enableHDR, let device = self.videoDevice, device.activeFormat.isVideoHDRSupported {
+                        // Public HDR toggle on device (iOS 8+, not connection KVC)
+                        do {
+                            try device.lockForConfiguration()
+                            device.automaticallyAdjustsVideoHDREnabled = false
+                            device.isVideoHDREnabled = true
+                            device.unlockForConfiguration()
+                        } catch {
+                            debugPrint("[Capture] HDR enable failed: \(error)")
                         }
                     }
                 }
@@ -266,10 +269,9 @@ final class CaptureService: NSObject {
 
     func pauseRecording() {
         isPausedFlag = true
-        // Prefer native pause if available (iOS 18)
-        if movieOutput.responds(to: NSSelectorFromString("pauseRecording")) {
-            // Use KVC-safe perform
-            _ = movieOutput.perform(NSSelectorFromString("pauseRecording"))
+        // iOS 18.6 — public API (AVCaptureFileOutput.pauseRecording)
+        if #available(iOS 18.0, *) {
+            movieOutput.pauseRecording()
             debugPrint("[Capture] native pause")
             return
         }
@@ -282,8 +284,8 @@ final class CaptureService: NSObject {
 
     func resumeRecording() {
         isPausedFlag = false
-        if movieOutput.responds(to: NSSelectorFromString("resumeRecording")) {
-            _ = movieOutput.perform(NSSelectorFromString("resumeRecording"))
+        if #available(iOS 18.0, *) {
+            movieOutput.resumeRecording()
             debugPrint("[Capture] native resume")
             return
         }
