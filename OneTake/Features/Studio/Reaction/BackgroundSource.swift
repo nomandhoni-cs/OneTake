@@ -103,8 +103,8 @@ final class BackgroundSource {
 
     // MARK: - Media
 
-    func setVideo(url: URL, localID: String?) throws {
-        try Self.validateVideo(url: url)
+    func setVideo(url: URL, localID: String?) async throws {
+        try await Self.validateVideo(url: url)
         teardownPlayer()
         let item = AVPlayerItem(url: url)
         let newPlayer = AVPlayer(playerItem: item)
@@ -158,12 +158,15 @@ final class BackgroundSource {
     // MARK: - Validation
 
     /// Rejects DRM/protected clips before they enter the pipeline.
-    static func validateVideo(url: URL) throws {
+    /// iOS 18.6 — uses `load(.hasProtectedContent)` / `load(.isPlayable)` per latest docs.
+    static func validateVideo(url: URL) async throws {
         let asset = AVURLAsset(url: url)
-        if asset.hasProtectedContent {
+        let hasProtected = (try? await asset.load(.hasProtectedContent)) ?? false
+        if hasProtected {
             throw BackgroundSourceError.protectedContent
         }
-        if !asset.isPlayable {
+        let playable = (try? await asset.load(.isPlayable)) ?? false
+        if !playable {
             throw BackgroundSourceError.unreadable
         }
     }
@@ -256,18 +259,25 @@ struct BackgroundPickerView: UIViewControllerRepresentable {
                         Task { @MainActor in onPick(.failure(BackgroundSourceError.unreadable)) }
                         return
                     }
+                    let dest = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                        .appendingPathExtension(url.pathExtension.isEmpty ? "mov" : url.pathExtension)
+                    try? FileManager.default.removeItem(at: dest)
                     do {
-                        let dest = FileManager.default.temporaryDirectory
-                            .appendingPathComponent(UUID().uuidString)
-                            .appendingPathExtension(url.pathExtension.isEmpty ? "mov" : url.pathExtension)
-                        try? FileManager.default.removeItem(at: dest)
                         try FileManager.default.copyItem(at: url, to: dest)
-                        try BackgroundSource.validateVideo(url: dest)
-                        Task { @MainActor in
-                            onPick(.success(PickedBackground(fileURL: dest, isVideo: true, localID: localID)))
-                        }
                     } catch {
                         Task { @MainActor in onPick(.failure(error)) }
+                        return
+                    }
+                    Task {
+                        do {
+                            try await BackgroundSource.validateVideo(url: dest)
+                            await MainActor.run {
+                                onPick(.success(PickedBackground(fileURL: dest, isVideo: true, localID: localID)))
+                            }
+                        } catch {
+                            await MainActor.run { onPick(.failure(error)) }
+                        }
                     }
                 }
             } else if provider.canLoadObject(ofClass: UIImage.self) {

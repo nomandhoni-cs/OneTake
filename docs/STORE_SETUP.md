@@ -9,7 +9,7 @@
 
 | What | Value |
 |---|---|
-| Bundle ID | `com.nomandhoni.OneTake` (mixed case — never change once set) |
+| Bundle ID | `com.nomandhoni.onetake` (mixed case — never change once set) |
 | Annual | `com.nomandhoni.onetake.annual` — $12.99/yr, **7-day free trial** |
 | Monthly | `com.nomandhoni.onetake.monthly` — $1.99/mo, no trial |
 | Lifetime | `com.nomandhoni.onetake.lifetime` — $39.99 one-time |
@@ -24,7 +24,7 @@ non-consumable — trials are technically impossible on it.
 
 - [ ] **Paid Apps agreement active**: App Store Connect → Agreements (Agreements,
       Tax, Banking). IAP — even sandbox — fails without it.
-- [ ] **App record**: My Apps → OneTake (bundle `com.nomandhoni.OneTake`) →
+- [ ] **App record**: My Apps → OneTake (bundle `com.nomandhoni.onetake`) →
       Monetization → In-App Purchases (or Features → In-App Purchases).
 - [ ] **Subscription group**: + Group, reference name e.g. `OneTake Pro`.
       Annual + Monthly go in the SAME group.
@@ -48,7 +48,7 @@ non-consumable — trials are technically impossible on it.
 
 ## 2. RevenueCat dashboard
 
-- [ ] app.revenuecat.com → **Add app** → iOS → bundle `com.nomandhoni.OneTake`.
+- [ ] app.revenuecat.com → **Add app** → iOS → bundle `com.nomandhoni.onetake`.
 - [ ] **Store connection**: Project → Integrations → App Store Connect. Needs
       an ASC API key: App Store Connect → Users and Access → Integrations →
       App Store Connect API → Team Keys → generate (note Issuer ID + Key ID,
@@ -68,12 +68,23 @@ non-consumable — trials are technically impossible on it.
 
 ## 3. Legal content (blocks App Store submission)
 
-- [ ] Paste your Terms of Service into `OneTake/Resources/Terms.md`
-      (replacing the scaffold), or give me a URL and I'll set
-      `LegalDocuments.termsURLString`.
-- [ ] Same for Privacy Policy → `OneTake/Resources/Privacy.md` (or URL).
-- [ ] Minimum coverage: camera/mic/photo-library usage, on-device storage,
-      no account, contact details.
+The documents themselves are drafted (`Resources/Terms.md`,
+`Resources/Privacy.md` — offline-first, no account/analytics, RevenueCat
+purchase disclosure, consent + 13+ clauses, trial terms; counterparty
+MEHEDI HASAN MRIDUL, contact nomandhoni@blinkeye.app). A test fails if
+scaffolds return. Remaining owner steps:
+
+- [ ] Optional: set `termsURLString` / `privacyURLString` in `LegalDocuments`
+      if the documents also live on your website (bundled text stays anyway).
+- [ ] Get local counsel to review both documents for your country. This is a
+      careful template, not legal advice.
+- [ ] **Privacy Nutrition Labels** (App Store Connect → App Privacy): declare
+      **Purchases** (purchase history, linked to user — Apple + RevenueCat
+      need it for entitlements) and **Identifiers** (anonymous app user ID /
+      device ID for restore, linked to user). Purpose: App Functionality.
+      Data Not Collected for everything else (no analytics, no tracking, no
+      location, no contacts). Cross-check against RevenueCat's current
+      disclosure before submitting — labels must match the policy text.
 
 ## 4. Verify end to end
 

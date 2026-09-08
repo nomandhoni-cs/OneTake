@@ -54,18 +54,13 @@ final class ExportService {
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
             throw ExportError.sessionCreationFailed
         }
-        session.outputURL = outputURL
-        session.outputFileType = .mp4
         session.timeRange = timeRange
         session.shouldOptimizeForNetworkUse = false
 
-        await session.export()
-
-        if let error = session.error {
+        do {
+            try await session.export(to: outputURL, as: .mp4)
+        } catch {
             throw ExportError.exportFailed(error.localizedDescription)
-        }
-        guard session.status == .completed else {
-            throw ExportError.exportFailed("status \(session.status.rawValue)")
         }
         return outputURL
     }
@@ -107,14 +102,8 @@ final class ExportService {
 
         compVideo?.preferredTransform = try await videoTrack.load(.preferredTransform)
 
-        // Video composition with CIFilter
-        let videoComposition = AVMutableVideoComposition(asset: composition) { request in
-            var image = request.sourceImage.clampedToExtent()
-            if let filtered = LUTCubeLoader.filter(for: lutPreset, inputImage: image) {
-                image = filtered.cropped(to: request.sourceImage.extent)
-            }
-            request.finish(with: image, context: nil)
-        }
+        // Video composition with CIFilter — iOS 16+ factory with completionHandler
+        let videoComposition = try await Self.videoComposition(for: composition, lut: lutPreset)
 
         // Render size from natural size
         let naturalSize = try await videoTrack.load(.naturalSize)
@@ -126,18 +115,13 @@ final class ExportService {
         guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.sessionCreationFailed
         }
-        session.outputURL = outputURL
-        session.outputFileType = .mp4
         session.videoComposition = videoComposition
         session.shouldOptimizeForNetworkUse = false
 
-        await session.export()
-
-        if let error = session.error {
+        do {
+            try await session.export(to: outputURL, as: .mp4)
+        } catch {
             throw ExportError.exportFailed(error.localizedDescription)
-        }
-        guard session.status == .completed else {
-            throw ExportError.exportFailed("status \(session.status.rawValue)")
         }
         return outputURL
     }
@@ -204,13 +188,7 @@ final class ExportService {
         let useLUT = lut != .natural
         var videoComposition: AVMutableVideoComposition?
         if useLUT {
-            videoComposition = AVMutableVideoComposition(asset: composition) { request in
-                var image = request.sourceImage.clampedToExtent()
-                if let filtered = LUTCubeLoader.filter(for: lut, inputImage: image) {
-                    image = filtered.cropped(to: request.sourceImage.extent)
-                }
-                request.finish(with: image, context: nil)
-            }
+            videoComposition = try await Self.videoComposition(for: composition, lut: lut)
             videoComposition?.renderSize = renderSize
             videoComposition?.frameDuration = CMTime(value: 1, timescale: 30)
         }
@@ -219,17 +197,15 @@ final class ExportService {
         guard let session = AVAssetExportSession(asset: composition, presetName: preset) else {
             throw ExportError.sessionCreationFailed
         }
-        session.outputURL = outputURL
-        session.outputFileType = .mp4
         if let vc = videoComposition {
             session.videoComposition = vc
         }
         session.shouldOptimizeForNetworkUse = false
-        await session.export()
-        if let error = session.error {
+        do {
+            try await session.export(to: outputURL, as: .mp4)
+        } catch {
             throw ExportError.exportFailed(error.localizedDescription)
         }
-        guard session.status == .completed else { throw ExportError.exportFailed("status \(session.status.rawValue)") }
         return outputURL
     }
 
@@ -271,6 +247,28 @@ final class ExportService {
             if let date = try? url.resourceValues(forKeys: [.creationDateKey]).creationDate, date < cutoff {
                 try? fm.removeItem(at: url)
             }
+        }
+    }
+
+    // MARK: - Video composition helper (iOS 16+ factory)
+
+    private static func videoComposition(for asset: AVAsset, lut: LUTPreset) async throws -> AVMutableVideoComposition {
+        try await withCheckedThrowingContinuation { continuation in
+            AVMutableVideoComposition.videoComposition(with: asset, applyingCIFiltersWithHandler: { request in
+                var image = request.sourceImage.clampedToExtent()
+                if let filtered = LUTCubeLoader.filter(for: lut, inputImage: image) {
+                    image = filtered.cropped(to: request.sourceImage.extent)
+                }
+                request.finish(with: image, context: nil)
+            }, completionHandler: { composition, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let composition {
+                    continuation.resume(returning: composition)
+                } else {
+                    continuation.resume(throwing: ExportError.sessionCreationFailed)
+                }
+            })
         }
     }
 }

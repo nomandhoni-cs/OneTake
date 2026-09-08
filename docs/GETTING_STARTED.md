@@ -72,7 +72,7 @@ Pre-commit: run both before pushing; CI runs `xcodebuild test` + `swiftlint`.
 - **Blade:** In `Review` (tap a take → Review), `TrimScrubberView` shows cut dividers + playhead; **Blade** splits at playhead (or mid), **Delete Segment** removes selected, **Undo Blade** reverts. Trim changes prune out-of-range cuts.
 - **LUTs:** `Review` → Color section shows **swatches** (40×24, CoreImage `colorCube` thumbnails, cached). Tap to select; Natural = neutral gray.
 - **Studio as tab:** Bottom bar is 4 tabs (My Takes / Scripts / Studio / Profile) — no floating button. Studio publishes `studioIsRecording` via `AppStorage`; leaving mid-recording shows `confirmationDialog`.
-- **Reset store:** Delete app from simulator or `xcrun simctl uninstall booted com.nomandhoni.OneTake`.
+- **Reset store:** Delete app from simulator or `xcrun simctl uninstall booted com.nomandhoni.onetake`.
 
 ## Troubleshooting
 

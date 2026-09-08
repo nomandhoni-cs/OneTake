@@ -146,10 +146,9 @@ struct LUTSwatchView: View {
             }
         }
         .task(id: preset.rawValue) {
-            let image = await Task.detached(priority: .userInitiated) {
-                LUTCubeThumbnailProvider.thumbnail(for: preset)
-            }.value
-            await MainActor.run { cgImage = image }
+            // Thumbnail is tiny (40×24) — MainActor cost is negligible and
+            // avoids Swift 6 isolation warnings from Task.detached.
+            cgImage = LUTCubeThumbnailProvider.thumbnail(for: preset)
         }
     }
 }

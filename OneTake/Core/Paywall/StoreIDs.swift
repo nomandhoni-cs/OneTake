@@ -9,13 +9,10 @@
 //
 import Foundation
 
-#warning(
-    "Owner setup: create the RC app + entitlement + products, then paste the PUBLIC api key below. App stays locked until set."
-)
-
+// RevenueCat PUBLIC key is set — see docs/STORE_SETUP.md for dashboard wiring.
 enum StoreIDs {
     /// RevenueCat PUBLIC api key (`appl_…`). Safe to ship in-client by design.
-    static let revenueCatAPIKey = ""
+    static let revenueCatAPIKey = "appl_LevidngozNUcJqwVJdbbzjAyWgw"
 
     /// Entitlement identifier — must match the RevenueCat dashboard exactly.
     static let proEntitlement = "pro"

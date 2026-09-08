@@ -288,3 +288,35 @@ struct LUTCubeLoaderTests {
         }
     }
 }
+
+// MARK: - Legal documents ship real content, never scaffolds
+
+/// Guards the Terms/Privacy bundles: they must load, must not contain
+/// scaffold markers, and must carry the clauses review cares about
+/// (trial terms, offline stance, purchase disclosure, consent, contact slot).
+struct LegalDocumentsTests {
+    @Test func bundledDocumentsLoad() {
+        let terms = LegalDocuments.bundledText(named: "Terms")
+        let privacy = LegalDocuments.bundledText(named: "Privacy")
+        #expect(!terms.isEmpty && !privacy.isEmpty)
+    }
+
+    @Test func noScaffoldMarkersRemain() {
+        for name in ["Terms", "Privacy"] {
+            let text = LegalDocuments.bundledText(named: name)
+            #expect(!text.contains("REPLACE THIS FILE"), "\(name).md still scaffolded")
+            #expect(!text.contains("[Your "), "\(name).md still scaffolded")
+        }
+    }
+
+    @Test func reviewCriticalClausesPresent() {
+        let terms = LegalDocuments.bundledText(named: "Terms").lowercased()
+        for clause in ["7-day free trial", "cancel", "13 years old", "consent", "as is", "nomandhoni@blinkeye.app", "mehedi hasan mridul"] {
+            #expect(terms.contains(clause), "Terms missing: \(clause)")
+        }
+        let privacy = LegalDocuments.bundledText(named: "Privacy").lowercased()
+        for clause in ["no account", "no analytics", "revenuecat", "delete", "under 13", "nomandhoni@blinkeye.app"] {
+            #expect(privacy.contains(clause), "Privacy missing: \(clause)")
+        }
+    }
+}

@@ -457,14 +457,8 @@ struct StudioView: View {
         pauseStartDate = Date()
         captureService.pauseRecording()
         haptics.impact(style: .light)
-        // Single paused Live Activity update
-        var pausedState = RecordingAttributes.ContentState(elapsedSeconds: elapsedSeconds, audioLevel: 0, isRecording: false)
-        // Use service's activity update with paused flag if available; fallback to update with isRecording false via KVC not needed — we
-        // send paused via end? Instead send update with isRecording false where implemented
-        // We do not have direct API for paused flag, but RecordingActivityService will handle via internal state if we extend; for now send
-        // update with audio 0
+        // Single paused Live Activity update (audio silenced; no paused-flag API yet).
         activityService.update(elapsedSeconds: elapsedSeconds, audioLevel: 0)
-        _ = pausedState
     }
 
     private func resumeRecording() async {

@@ -10,12 +10,7 @@
 //
 import Foundation
 
-#warning(
-    "Owner content: paste Terms + Privacy URLs below (or leave empty), and replace Resources/*.md with real documents before submission."
-)
-
-/// Legal content source. Bundled files are the fallback; upstream URLs win
-/// when set so web updates don't need an app release.
+// Legal URLs are optional — bundled markdown is the fallback; see docs/STORE_SETUP.md §3.
 enum LegalDocuments {
     /// Public Terms of Service URL. Empty = bundled text only.
     static let termsURLString = ""

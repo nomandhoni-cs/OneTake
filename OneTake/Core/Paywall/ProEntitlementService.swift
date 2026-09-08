@@ -20,9 +20,9 @@ import SwiftUI
 final class ProEntitlementService {
     private let client: PurchasesClient
     private let userDefaults: UserDefaults
-    /// Listener handle must die with the service, but `deinit` is nonisolated —
-    /// `Task.cancel()` is thread-safe, so unsynchronized storage is sound.
-    private nonisolated(unsafe) var listenerTask: Task<Void, Never>?
+    /// Listener handle must die with the service (`@ObservationIgnored`:
+    /// listener churn is not view state). `Task.cancel()` is thread-safe.
+    @ObservationIgnored private var listenerTask: Task<Void, Never>?
 
     /// Offline-safe cache key — the gate source when the network is gone.
     /// Plain `UserDefaults` (not `@AppStorage`): property wrappers collide

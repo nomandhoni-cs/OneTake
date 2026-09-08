@@ -25,7 +25,7 @@ Invariants to preserve:
 
 ## 2. Where bytes live
 
-- SwiftData store: default `.store` managed by `ModelContainer` (Application Support).
+- SwiftData store: explicit `default.store` URL in the app container's Application Support (pinned in `OneTakeApp` — never the shared App Group container, whose first-launch staging causes sandbox/recovery noise).
 - Video files: `Documents/Takes/<uuid>.mp4` (`ExportService.takesDirectory()`); temp/segments cleaned after merge/export.
 - Picker copies: `FileManager.temporaryDirectory` (BG media); safe to purge — originals stay in Photos.
 

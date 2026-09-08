@@ -43,7 +43,10 @@ struct ContentView: View {
     var body: some View {
         Group {
             if OnboardingFlow.needsOnboarding(completedVersion: completedVersion, acceptedLegalVersion: acceptedLegalVersion) {
-                OnboardingView()
+                OnboardingView(startStep: OnboardingFlow.startStep(
+                    completedVersion: completedVersion,
+                    acceptedLegalVersion: acceptedLegalVersion
+                ))
             } else if ENABLE_TAB_SHELL {
                 RootTabView()
             } else {

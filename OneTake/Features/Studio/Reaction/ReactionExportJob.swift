@@ -102,11 +102,10 @@ final class ReactionExportJob: @unchecked Sendable {
     }
 
     func cancel() {
-        stateLock.lock()
-        cancelled = true
-        let readers = readerRefs
-        let writer = writerRef
-        stateLock.unlock()
+        let (readers, writer): ([AVAssetReader], AVAssetWriter?) = stateLock.withLock {
+            cancelled = true
+            return (readerRefs, writerRef)
+        }
         for reader in readers {
             reader.cancelReading()
         }
@@ -120,20 +119,20 @@ final class ReactionExportJob: @unchecked Sendable {
         try FileManager.default.createDirectory(at: input.tempURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: input.tempURL)
         defer {
-            stateLock.lock()
-            readerRefs.removeAll()
-            writerRef = nil
-            stateLock.unlock()
+            stateLock.withLock {
+                readerRefs.removeAll()
+                writerRef = nil
+            }
         }
 
         let rawAsset = AVURLAsset(url: input.rawURL)
-        guard rawAsset.isReadable else { throw ReactionExportError.unreadableRaw }
-        guard let camVideoTrack = rawAsset.tracks(withMediaType: .video).first else {
+        guard rawAsset.legacyIsReadable else { throw ReactionExportError.unreadableRaw }
+        guard let camVideoTrack = rawAsset.legacyTracks(withMediaType: .video).first else {
             throw ReactionExportError.noVideoTrack
         }
-        let camAudioTrack = rawAsset.tracks(withMediaType: .audio).first
-        let duration = camVideoTrack.timeRange.duration
-        let fps = max(camVideoTrack.nominalFrameRate, 1)
+        let camAudioTrack = rawAsset.legacyTracks(withMediaType: .audio).first
+        let duration = camVideoTrack.legacyTimeRange.duration
+        let fps = max(camVideoTrack.legacyNominalFrameRate, 1)
         let totalFrames = max(Int((duration.seconds * Double(fps)).rounded()), 1)
 
         let compositor = ReactionCompositor()
@@ -153,12 +152,9 @@ final class ReactionExportJob: @unchecked Sendable {
         let stack = try makeWriter(tempURL: input.tempURL, hasMic: camAudioTrack != nil)
         let writer = stack.writer
         let videoInput = stack.video
-        let adaptor = stack.adaptor
         let audioInput = stack.audio
         let pcmFormat = Self.pcmFormat()
-        stateLock.lock()
-        writerRef = writer
-        stateLock.unlock()
+        stateLock.withLock { writerRef = writer }
 
         // Video pass.
         guard camVideoReader.startReading() else { throw ReactionExportError.unreadableRaw }
@@ -379,7 +375,7 @@ final class ReactionExportJob: @unchecked Sendable {
 
         // A silent BG clip (no audio track) is legitimate → mic-only mix.
         var bgSamples: [Float] = []
-        if let bgURL = input.bgVideoURL, let bgTrack = AVURLAsset(url: bgURL).tracks(withMediaType: .audio).first {
+        if let bgURL = input.bgVideoURL, let bgTrack = AVURLAsset(url: bgURL).legacyTracks(withMediaType: .audio).first {
             bgSamples = try readMonoSamples(asset: AVURLAsset(url: bgURL), track: bgTrack, failure: .backgroundUnreadable).samples
         }
 
@@ -475,18 +471,14 @@ final class ReactionExportJob: @unchecked Sendable {
     }
 
     private func checkCancelled() throws {
-        stateLock.lock()
-        let stop = cancelled
-        stateLock.unlock()
+        let stop = stateLock.withLock { cancelled }
         if stop {
             throw CancellationError()
         }
     }
 
     private func register(reader: AVAssetReader) {
-        stateLock.lock()
-        readerRefs.append(reader)
-        stateLock.unlock()
+        stateLock.withLock { readerRefs.append(reader) }
     }
 
     private func makeReader(asset: AVURLAsset) throws -> AVAssetReader {

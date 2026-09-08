@@ -6,7 +6,7 @@
 //  Why: v2 is gates, not a tutorial: every step resolves a decision (start,
 //  agree, subscribe-or-skip, understand). Versioned so future legal bumps can
 //  force a terms-only pass; system permission prompts stay in context (§15).
-//  See: openspec/changes/onboarding-terms-paywall/specs/onboarding-v2/spec.md
+//  See: openspec/specs/onboarding-v2/spec.md
 //
 import SwiftUI
 
@@ -35,6 +35,8 @@ enum OnboardingFlow {
 
 /// Versioned first-run flow. Owns its step state; completion persists twice
 /// (flow version + legal version/timestamp) for future legal bumps.
+/// `startStep`/`onFinish` make it replayable (e.g. Profile tour) without
+/// touching gate semantics — replaying an already-current flow is a no-op.
 struct OnboardingView: View {
     @Environment(ProEntitlementService.self)
     private var pro
@@ -46,9 +48,11 @@ struct OnboardingView: View {
     private var acceptedLegalAt = ""
 
     @State private var step: OnboardingStep
+    private let onFinish: (() -> Void)?
 
-    init() {
-        _step = State(initialValue: .welcome)
+    init(startStep: OnboardingStep = .welcome, onFinish: (() -> Void)? = nil) {
+        _step = State(initialValue: startStep)
+        self.onFinish = onFinish
     }
 
     var body: some View {
@@ -76,12 +80,9 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityLabel("Onboarding")
 
-            primaryButton
-                .padding(.bottom, 32)
+            bottomBar
         }
-        .onAppear {
-            step = OnboardingFlow.startStep(completedVersion: completedVersion, acceptedLegalVersion: acceptedLegalVersion)
-        }
+        .background(Color(.systemGroupedBackground))
     }
 
     // MARK: - Pages
@@ -134,25 +135,63 @@ struct OnboardingView: View {
         .padding(.horizontal, 32)
     }
 
-    @ViewBuilder private var primaryButton: some View {
-        if step == .welcome {
-            Button("Continue") { advance(from: .welcome) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityLabel("Continue")
-        } else if step == .terms {
-            // TermsView owns its Agree button (blocking by law).
-            EmptyView()
-        } else if step == .paywall {
-            Button("Not Now") { advance(from: .paywall) }
-                .font(.subheadline)
-                .accessibilityLabel("Skip subscription for now")
-        } else {
-            Button("Get Started") { finish() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityLabel("Finish onboarding")
+    // MARK: - Fixed bottom bar (HIG: primary action never scrolls away)
+
+    @ViewBuilder private var bottomBar: some View {
+        VStack(spacing: 0) {
+            Divider().opacity(step == .terms ? 1 : 0)
+            Group {
+                switch step {
+                case .welcome:
+                    Button("Continue") { advance(from: .welcome) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .accessibilityLabel("Continue")
+                case .terms:
+                    termsBottomBar
+                case .paywall:
+                    Button("Not Now") { advance(from: .paywall) }
+                        .font(.subheadline)
+                        .padding(.vertical, 12)
+                        .accessibilityLabel("Skip subscription for now")
+                case .permissions:
+                    Button("Get Started") { finish() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .accessibilityLabel("Finish onboarding")
+                }
+            }
+            .background(.bar)
         }
+        // Keep bar out of the safe area's bottom edge.
+        .padding(.bottom, 8)
+    }
+
+    private var termsBottomBar: some View {
+        VStack(spacing: 8) {
+            // Consent line — reassures that tapping View opens the full sheet.
+            Text("By tapping Agree, you accept our Terms and Privacy Policy.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+                .accessibilityLabel("By tapping Agree, you accept our Terms and Privacy Policy.")
+            Button("Agree & Continue") { agreeToLegal() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .accessibilityLabel("Agree to Terms and Privacy Policy")
+                .accessibilityHint("Accepts Terms and Privacy and continues")
+        }
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     // MARK: - Flow
@@ -179,6 +218,7 @@ struct OnboardingView: View {
 
     private func finish() {
         completedVersion = OnboardingFlow.currentVersion
+        onFinish?()
     }
 }
 

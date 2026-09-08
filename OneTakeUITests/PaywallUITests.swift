@@ -19,6 +19,8 @@ final class PaywallUITests: XCTestCase {
         app.launch()
         ensurePastOnboarding(app)
         app.tabBars.buttons["Profile"].tap()
+        // About section sits below the fold — scroll to materialize rows.
+        app.swipeUp()
         let proRow = app.buttons["OneTake Pro, free plan"]
         XCTAssertTrue(proRow.waitForExistence(timeout: 5))
         proRow.tap()
@@ -35,6 +37,7 @@ final class PaywallUITests: XCTestCase {
         app.launch()
         ensurePastOnboarding(app)
         app.tabBars.buttons["Profile"].tap()
+        app.swipeUp()
         let termsRow = app.buttons["Terms and Privacy Policy"]
         XCTAssertTrue(termsRow.waitForExistence(timeout: 5))
         termsRow.tap()

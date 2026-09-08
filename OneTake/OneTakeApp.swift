@@ -40,9 +40,13 @@ struct OneTakeApp: App {
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(versionedSchema: OneTakeSchemaV1.self)
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
+            // `groupContainer: .none` pins the store to the app container.
+            // The default `.automatic` resolves into the App Group when the
+            // entitlement exists, where first-launch creation hits
+            // staging/sandbox quirks (errno 2 + recovery log spam).
+            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, groupContainer: .none)
             return try ModelContainer(for: schema, migrationPlan: OneTakeMigrationPlan.self, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not create ModelContainer: \(error)")

@@ -21,6 +21,10 @@ skip path. No system permission prompt SHALL fire from any onboarding step.
 - **WHEN** the accepted legal version is below current with onboarding complete
 - **THEN** launch shows only the Terms step; agreeing returns to the shell
 
+#### Scenario: Replay tour from Profile
+- **WHEN** the user taps Replay Welcome Tour in Profile → About
+- **THEN** the full flow presents from Welcome in a cover; finishing dismisses back to Profile without altering gates
+
 ### Requirement: Permissions explained, asked in context
 Onboarding SHALL explain why camera, microphone, and Photos-add matter with
 one line each, and SHALL state prompts appear at first record/save. Camera/mic

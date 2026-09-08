@@ -28,7 +28,7 @@ struct TrimScrubberView: View {
     }
 
     private var isBladeDisabled: Bool {
-        guard let onBlade else { return true }
+        guard onBlade != nil else { return true }
         // If playhead provided, disable at ends; otherwise enable when more than 1s range
         if let playhead = playheadSeconds {
             return playhead <= startSeconds + 0.1 || playhead >= endSeconds - 0.1

@@ -86,8 +86,7 @@ final class ReactionCompositor {
 
     init() {
         if let device = MTLCreateSystemDefaultDevice() {
-            context = (try? CIContext(mtlDevice: device, options: [.cacheIntermediates: false]))
-                ?? CIContext(options: [.cacheIntermediates: false])
+            context = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
         } else {
             context = CIContext(options: [.cacheIntermediates: false])
         }

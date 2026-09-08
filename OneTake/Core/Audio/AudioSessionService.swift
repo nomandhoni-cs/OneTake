@@ -14,7 +14,9 @@ final class AudioSessionService: NSObject {
     private(set) var level: Float = -60 // dBFS floor
     private var isMonitoring = false
     private var recorder: AVAudioRecorder?
-    private nonisolated(unsafe) var meterTimer: Timer?
+    /// Lifetime handle, not view state (`@ObservationIgnored`). All
+    /// reads/writes happen on the main thread via the runloop timer.
+    @ObservationIgnored private var meterTimer: Timer?
 
     override init() {
         super.init()
@@ -34,7 +36,7 @@ final class AudioSessionService: NSObject {
             try session.setCategory(
                 .playAndRecord,
                 mode: .videoRecording,
-                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
             )
             try session.setActive(true)
         } catch {
@@ -97,11 +99,12 @@ final class AudioSessionService: NSObject {
             recorder?.isMeteringEnabled = true
             recorder?.record()
             meterTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+                guard let service = self else { return }
                 Task { @MainActor in
-                    guard let self, let r = self.recorder else { return }
+                    guard let r = service.recorder else { return }
                     r.updateMeters()
                     let db = r.averagePower(forChannel: 0) // -160..0
-                    self.level = max(-60, db)
+                    service.level = max(-60, db)
                 }
             }
         } catch {

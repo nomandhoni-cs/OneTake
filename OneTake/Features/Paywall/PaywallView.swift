@@ -175,6 +175,8 @@ struct PaywallView: View {
         .accessibilityLabel("Restore purchases")
     }
 
+    @State private var legalSheet: LegalSheetKind?
+
     private var footer: some View {
         VStack(spacing: 8) {
             // Single localized string by law (§7 beats line length — App Review
@@ -187,15 +189,22 @@ struct PaywallView: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             HStack(spacing: 20) {
+                // Always visible per Guideline 3.1.2 — external URL when set,
+                // otherwise bundled sheet fallback (still passes Review).
                 if let terms = LegalDocuments.termsURL {
                     Link("Terms of Service", destination: terms).font(.caption)
+                } else {
+                    Button("Terms of Service") { legalSheet = .terms }.font(.caption)
                 }
                 if let privacy = LegalDocuments.privacyURL {
                     Link("Privacy Policy", destination: privacy).font(.caption)
+                } else {
+                    Button("Privacy Policy") { legalSheet = .privacy }.font(.caption)
                 }
             }
         }
         .accessibilityElement(children: .combine)
+        .sheet(item: $legalSheet) { kind in LegalSheetContent(kind: kind) }
     }
 }
 

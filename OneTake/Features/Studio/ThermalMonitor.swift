@@ -11,7 +11,8 @@ import Observation
 final class ThermalMonitor {
     var state: ProcessInfo.ThermalState = .nominal
     var shouldDowngrade = false
-    private nonisolated(unsafe) var observer: NSObjectProtocol?
+    /// Lifetime handle, not view state (`@ObservationIgnored`).
+    @ObservationIgnored private var observer: NSObjectProtocol?
 
     init() {
         state = ProcessInfo.processInfo.thermalState
@@ -21,11 +22,11 @@ final class ThermalMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            guard let monitor = self else { return }
             Task { @MainActor in
-                guard let self else { return }
-                self.state = ProcessInfo.processInfo.thermalState
-                self.shouldDowngrade = (self.state == .critical)
-                if self.shouldDowngrade {
+                monitor.state = ProcessInfo.processInfo.thermalState
+                monitor.shouldDowngrade = (monitor.state == .critical)
+                if monitor.shouldDowngrade {
                     debugPrint("[Thermal] critical → suggest 1080p")
                 }
             }

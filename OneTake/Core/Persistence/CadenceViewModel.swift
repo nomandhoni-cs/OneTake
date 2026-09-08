@@ -11,7 +11,7 @@ import Observation
 @Observable
 @MainActor
 final class CadenceViewModel {
-    static let wordsPerMinute: Double = 130
+    nonisolated static let wordsPerMinute: Double = 130
 
     // MARK: - State
 

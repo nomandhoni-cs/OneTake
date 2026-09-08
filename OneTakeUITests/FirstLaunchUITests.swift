@@ -47,6 +47,26 @@ final class FirstLaunchUITests: XCTestCase {
     }
 
     @MainActor
+    func testReplayTourFromProfile() {
+        let app = XCUIApplication()
+        app.launch()
+        ensurePastOnboarding(app)
+        app.tabBars.buttons["Profile"].tap()
+        // About section sits below the fold — scroll to materialize rows.
+        app.swipeUp()
+        let replay = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'replay welcome tour'")).firstMatch
+        XCTAssertTrue(replay.waitForExistence(timeout: 5))
+        replay.tap()
+        // Replayed tour always starts at welcome, then walks and dismisses.
+        XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout: 5))
+        app.buttons["Continue"].tap()
+        app.buttons["Agree to Terms and Privacy Policy"].tap()
+        app.buttons["Skip subscription for now"].tap()
+        app.buttons["Finish onboarding"].tap()
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testScriptsTabShowsTeachingEmptyState() {
         let app = XCUIApplication()
         app.launch()

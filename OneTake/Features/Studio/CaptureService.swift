@@ -219,9 +219,13 @@ final class CaptureService: NSObject {
         sessionQueue.async { [weak self, movieOutput] in
             guard let self else { return }
             if lockExposure {
-                lockDeviceExposure()
+                // SessionQueue-confined, but CaptureService is MainActor by default.
+                // Use assumeIsolated to pass MainActor self as delegate from nonisolated queue.
+                MainActor.assumeIsolated { self.lockDeviceExposure() }
             }
-            movieOutput.startRecording(to: url, recordingDelegate: self)
+            MainActor.assumeIsolated {
+                movieOutput.startRecording(to: url, recordingDelegate: self)
+            }
         }
     }
 
@@ -290,8 +294,11 @@ final class CaptureService: NSObject {
         let segURL = dir.appendingPathComponent("seg-\(String(format: "%03d", segmentURLs.count + 1)).mp4")
         segmentURLs.append(segURL)
         currentOutputURL = segURL
-        sessionQueue.async { [movieOutput] in
-            movieOutput.startRecording(to: segURL, recordingDelegate: self)
+        let delegate: AVCaptureFileOutputRecordingDelegate = self
+        sessionQueue.async { [movieOutput, delegate] in
+            MainActor.assumeIsolated {
+                movieOutput.startRecording(to: segURL, recordingDelegate: delegate)
+            }
         }
         debugPrint("[Capture] fallback resume — new segment \(segURL.lastPathComponent)")
     }
@@ -338,25 +345,23 @@ final class CaptureService: NSObject {
             .appendingPathComponent("\(originalURL.deletingPathExtension().lastPathComponent)-merged.mp4")
         try? FileManager.default.removeItem(at: mergedURL)
         guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        session.outputURL = mergedURL
-        session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = false
-        await session.export()
-        if session.status == .completed {
-            // Cleanup segments
-            for url in existing {
-                try? FileManager.default.removeItem(at: url)
-            }
-            if let dir = existing.first?.deletingLastPathComponent() {
-                try? FileManager.default.removeItem(at: dir)
-            }
-            // Also remove original first segment if different from merged
-            try? FileManager.default.removeItem(at: originalURL)
-            return mergedURL
-        } else {
-            debugPrint("[Capture] merge failed: \(session.error?.localizedDescription ?? "unknown")")
+        do {
+            try await session.export(to: mergedURL, as: .mp4)
+        } catch {
+            debugPrint("[Capture] merge failed: \(error.localizedDescription)")
             return nil
         }
+        // New API throws on failure, so reaching here means completed — cleanup
+        for url in existing {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let dir = existing.first?.deletingLastPathComponent() {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        // Also remove original first segment if different from merged
+        try? FileManager.default.removeItem(at: originalURL)
+        return mergedURL
     }
 
     private func restoreLocks() {

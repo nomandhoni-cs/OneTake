@@ -40,7 +40,7 @@ final class BGTimeline {
         }
         self.url = url
         let asset = AVURLAsset(url: url)
-        duration = asset.tracks(withMediaType: .video).first?.timeRange.duration ?? .zero
+        duration = asset.legacyTracks(withMediaType: .video).first?.legacyTimeRange.duration ?? .zero
         startReader()
     }
 
@@ -81,10 +81,10 @@ final class BGTimeline {
 
     private func startReader() {
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .video).first,
+        guard let track = asset.legacyTracks(withMediaType: .video).first,
               let reader = try? AVAssetReader(asset: asset)
         else {
-            reader = nil
+            self.reader = nil
             output = nil
             return
         }

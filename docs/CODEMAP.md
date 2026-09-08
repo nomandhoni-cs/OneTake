@@ -87,7 +87,7 @@
 
 | File | Owns |
 |------|------|
-| `ProfileView.swift` | `Form` with `CameraDefaultsDetail`/`CountdownDetail`, `Subscription` section (OneTake Pro status → paywall sheet), `Link` to Settings, `Terms & Privacy` row (read-only `TermsView`), `#Preview` with `try!` (lint disabled) |
+| `ProfileView.swift` | `Form` with `CameraDefaultsDetail`/`CountdownDetail`, `Subscription` section (OneTake Pro status → paywall sheet), `Link` to Settings, `Terms & Privacy` row (read-only `TermsView`), `Replay Welcome Tour` row (onboarding cover replay), `#Preview` with `try!` (lint disabled) |
 | `StudioSettings.swift` | `Resolution`/`FrameRate`/`AspectRatio` enums, `StudioSettings` defaults |
 
 ### `AppIntents/OneTakeIntents.swift`

@@ -79,6 +79,11 @@ protocol PurchasesClient: Sendable {
 
 /// Live RevenueCat implementation.
 struct RevenueCatClient: PurchasesClient {
+    /// Explicitly nonisolated: the struct holds no state, so the default
+    /// value in `ProEntitlementService.init` (evaluated in a nonisolated
+    /// context) must not hop to the main actor to build it.
+    nonisolated init() {} // swiftlint:disable:this unneeded_synthesized_initializer
+
     func loadPackages() async throws -> [PaywallPackage] {
         guard Purchases.isConfigured else { throw PaywallError.notConfigured }
         // The dashboard's current offering is the contract — no ID matching here.

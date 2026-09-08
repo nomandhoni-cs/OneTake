@@ -21,6 +21,7 @@ struct ProfileView: View {
     private var pro
     @State private var path = NavigationPath()
     @State private var showPaywall = false
+    @State private var showTour = false
 
     private var takesSummary: String {
         let count = takes.count
@@ -81,6 +82,12 @@ struct ProfileView: View {
                         Label("Terms & Privacy", systemImage: "doc.text.fill")
                     }
                     .accessibilityLabel("Terms and Privacy Policy")
+                    Button {
+                        showTour = true
+                    } label: {
+                        Label("Replay Welcome Tour", systemImage: "graduationcap")
+                    }
+                    .accessibilityLabel("Replay welcome tour")
                 }
             }
             .listStyle(.insetGrouped)
@@ -89,6 +96,11 @@ struct ProfileView: View {
                 NavigationStack {
                     PaywallView(showsClose: true)
                 }
+            }
+            .fullScreenCover(isPresented: $showTour) {
+                // Replay only: starts at welcome, dismisses on finish.
+                // Version flags are already current, so writes are no-ops.
+                OnboardingView(startStep: .welcome) { showTour = false }
             }
         }
     }

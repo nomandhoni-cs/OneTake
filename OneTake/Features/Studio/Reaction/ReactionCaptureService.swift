@@ -105,21 +105,23 @@ final class ReactionCaptureService: NSObject {
 
     /// Applies a Photos pick; keeps the previous BG on DRM/unreadable errors.
     func applyPickedBackground(_ picked: PickedBackground) {
-        do {
-            if picked.isVideo {
-                try background.setVideo(url: picked.fileURL, localID: picked.localID)
-                bgPhotoURL = nil
-            } else if let data = try? Data(contentsOf: picked.fileURL), let image = UIImage(data: data) {
-                background.setImage(image, localID: picked.localID)
-                bgPhotoURL = picked.fileURL
-            } else {
-                throw BackgroundSourceError.unreadable
+        Task { @MainActor in
+            do {
+                if picked.isVideo {
+                    try await background.setVideo(url: picked.fileURL, localID: picked.localID)
+                    bgPhotoURL = nil
+                } else if let data = try? Data(contentsOf: picked.fileURL), let image = UIImage(data: data) {
+                    background.setImage(image, localID: picked.localID)
+                    bgPhotoURL = picked.fileURL
+                } else {
+                    throw BackgroundSourceError.unreadable
+                }
+                if !isRecording {
+                    background.play()
+                }
+            } catch {
+                setError(error.localizedDescription)
             }
-            if !isRecording {
-                background.play()
-            }
-        } catch {
-            setError(error.localizedDescription)
         }
     }
 
