@@ -56,142 +56,87 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                if OnboardingFlow.canSkip(step) {
-                    Button("Skip") { advance(from: step) }
-                        .accessibilityLabel("Skip this step")
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
-
-            // Plain switch, not a TabView: pages must not be swipe-skippable
-            // (terms acceptance is legally binding).
+        NavigationStack {
             Group {
                 switch step {
                 case .welcome: welcomePage
                 case .terms: TermsView(mode: .accept(onAgree: agreeToLegal))
-                case .paywall: paywallPage
+                case .paywall: PaywallView(onUnlocked: { advance(from: .paywall) })
                 case .permissions: permissionsPage
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel("Onboarding")
-
-            bottomBar
+            .navigationBarTitleDisplayMode(.inline)
+            // Toolbar, not a hand-rolled HStack: the system owns placement,
+            // hit target, and Liquid Glass chrome on iOS 26.
+            .toolbar {
+                if step == .permissions {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Skip") { advance(from: .permissions) }
+                            .accessibilityLabel("Skip this step")
+                    }
+                }
+            }
+            // `safeAreaInset` is the native way to pin an action: scrollable
+            // pages (terms, paywall) get their content inset automatically
+            // instead of hiding behind the button.
+            .safeAreaInset(edge: .bottom) {
+                OnboardingActionBar(step: step, onAgree: agreeToLegal, onAdvance: advance, onFinish: finish)
+            }
         }
-        .background(Color(.systemGroupedBackground))
     }
 
     // MARK: - Pages
 
+    /// Scrollable so the value props survive the largest Dynamic Type sizes
+    /// instead of clipping against the pinned action.
     private var welcomePage: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "video.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(Color.appAccent)
-                .accessibilityHidden(true)
-            Text("OneTake")
-                .font(.largeTitle.weight(.bold))
-            VStack(alignment: .leading, spacing: 10) {
-                ValueRow(icon: "doc.text.fill", text: "Write scripts, read them off the lens")
-                ValueRow(icon: "person.2.fill", text: "React over any clip, solo or together")
-                ValueRow(icon: "wand.and.stars", text: "Trim, grade with 10 LUTs, export in 4K")
+        ScrollView {
+            VStack(spacing: 16) {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 72))
+                    .foregroundStyle(Color.appAccent)
+                    .accessibilityHidden(true)
+                Text("OneTake")
+                    .font(.largeTitle.weight(.bold))
+                VStack(alignment: .leading, spacing: 10) {
+                    ValueRow(icon: "doc.text.fill", text: "Write scripts, read them off the lens")
+                    ValueRow(icon: "person.2.fill", text: "React over any clip, solo or together")
+                    ValueRow(icon: "wand.and.stars", text: "Trim, grade with 10 LUTs, export in 4K")
+                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
         }
-        .padding(.horizontal, 32)
-    }
-
-    private var paywallPage: some View {
-        NavigationStack {
-            PaywallView(onUnlocked: { advance(from: .paywall) })
-        }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var permissionsPage: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(Color.appAccent)
-                .accessibilityHidden(true)
-            Text("Private by design")
-                .font(.title.weight(.bold))
-            Text("Everything stays on your device. You'll be asked for access exactly when each feature needs it — never before.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            VStack(alignment: .leading, spacing: 10) {
-                ValueRow(icon: "camera.fill", text: "Camera & microphone — when you first record")
-                ValueRow(icon: "photo.fill", text: "Photo library — when you first save a take")
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 32)
-    }
-
-    // MARK: - Fixed bottom bar (HIG: primary action never scrolls away)
-
-    @ViewBuilder private var bottomBar: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(step == .terms ? 1 : 0)
-            Group {
-                switch step {
-                case .welcome:
-                    Button("Continue") { advance(from: .welcome) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .accessibilityLabel("Continue")
-                case .terms:
-                    termsBottomBar
-                case .paywall:
-                    Button("Not Now") { advance(from: .paywall) }
-                        .font(.subheadline)
-                        .padding(.vertical, 12)
-                        .accessibilityLabel("Skip subscription for now")
-                case .permissions:
-                    Button("Get Started") { finish() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .accessibilityLabel("Finish onboarding")
+        ScrollView {
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(Color.appAccent)
+                    .accessibilityHidden(true)
+                Text("Private by design")
+                    .font(.title.weight(.bold))
+                Text("Everything stays on your device. You'll be asked for access exactly when each feature needs it — never before.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: 10) {
+                    ValueRow(icon: "camera.fill", text: "Camera & microphone — when you first record")
+                    ValueRow(icon: "photo.fill", text: "Photo library — when you first save a take")
                 }
+                .padding(.top, 8)
             }
-            .background(.bar)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
         }
-        // Keep bar out of the safe area's bottom edge.
-        .padding(.bottom, 8)
-    }
-
-    private var termsBottomBar: some View {
-        VStack(spacing: 8) {
-            // Consent line — reassures that tapping View opens the full sheet.
-            Text("By tapping Agree, you accept our Terms and Privacy Policy.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-                .accessibilityLabel("By tapping Agree, you accept our Terms and Privacy Policy.")
-            Button("Agree & Continue") { agreeToLegal() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
-                .accessibilityLabel("Agree to Terms and Privacy Policy")
-                .accessibilityHint("Accepts Terms and Privacy and continues")
-        }
-        .padding(.vertical, 12)
-        .background(.bar)
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     // MARK: - Flow
@@ -225,6 +170,68 @@ struct OnboardingView: View {
 #Preview {
     OnboardingView()
         .environment(ProEntitlementService.previewLocked)
+}
+
+/// The pinned primary action for each onboarding step.
+///
+/// A struct, not a helper func, so SwiftUI keeps identity across step changes
+/// (see `.swiftlint.yml` `avoid_helper_func_view`). Carries a `.bar` material
+/// because terms and paywall scroll underneath it — that is a system material
+/// that adapts to light/dark and Liquid Glass, not a fixed colour.
+private struct OnboardingActionBar: View {
+    let step: OnboardingStep
+    let onAgree: () -> Void
+    let onAdvance: (OnboardingStep) -> Void
+    let onFinish: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            switch step {
+            case .welcome:
+                OnboardingPrimaryButton(title: "Continue") { onAdvance(.welcome) }
+                    .accessibilityLabel("Continue")
+
+            case .terms:
+                // Consent line sits with the action it explains.
+                Text("By tapping Agree, you accept our Terms and Privacy Policy.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel("By tapping Agree, you accept our Terms and Privacy Policy.")
+                OnboardingPrimaryButton(title: "Agree & Continue", action: onAgree)
+                    .accessibilityLabel("Agree to Terms and Privacy Policy")
+                    .accessibilityHint("Accepts Terms and Privacy and continues")
+
+            case .paywall:
+                // Plain button: declining must never compete with the purchase
+                // CTA inside the paywall itself.
+                Button("Not Now") { onAdvance(.paywall) }
+                    .accessibilityLabel("Skip subscription for now")
+
+            case .permissions:
+                OnboardingPrimaryButton(title: "Get Started", action: onFinish)
+                    .accessibilityLabel("Finish onboarding")
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+}
+
+/// The one prominent, full-width action per onboarding step. A struct rather
+/// than a helper func so SwiftUI diffs it by identity (`avoid_helper_func_view`).
+private struct OnboardingPrimaryButton: View {
+    let title: LocalizedStringKey
+    let action: () -> Void
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+    }
 }
 
 /// Icon + one-line value prop — struct (not a helper func) for view identity.

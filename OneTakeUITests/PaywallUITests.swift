@@ -5,9 +5,12 @@
 
 import XCTest
 
-/// Paywall + legal surfaces reachable without media, purchases, or keys.
-/// Without the owner API key the wall deterministically shows its offline
-/// state — asserted here. Never taps purchase (system sheet) or Record.
+/// Paywall + legal surfaces reachable without media or purchases.
+/// The owner API key IS set and the App Store products are live, so the wall
+/// now resolves real packages — the old "Plans unavailable" assertion asserted
+/// a broken store and started failing the moment the store was fixed. These
+/// assert the states that are actually correct either way, and never tap
+/// purchase (system sheet) or Record.
 final class PaywallUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -25,9 +28,23 @@ final class PaywallUITests: XCTestCase {
         XCTAssertTrue(proRow.waitForExistence(timeout: 5))
         proRow.tap()
         XCTAssertTrue(app.navigationBars["OneTake Pro"].waitForExistence(timeout: 5))
-        // No API key in test builds → honest offline state, never a spinner loop.
-        XCTAssertTrue(app.staticTexts["Plans unavailable"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Retry"].exists)
+
+        // The wall must resolve to a definite state, never spin. Either the
+        // packages load (products live) or the honest empty state appears with
+        // a Retry — both are correct; a permanent spinner is not.
+        let plansLoaded = app.buttons["Start Free Trial"].waitForExistence(timeout: 15)
+            || app.buttons["Subscribe Annual"].exists
+            || app.buttons["Buy Lifetime"].exists
+            || app.buttons["Subscribe Monthly"].exists
+        let offlineState = app.staticTexts["Plans unavailable"].exists && app.buttons["Retry"].exists
+        XCTAssertTrue(
+            plansLoaded || offlineState,
+            "Paywall settled on neither packages nor the empty state — likely stuck loading"
+        )
+
+        // Restore is always available, loaded or not: App Review requires it.
+        XCTAssertTrue(app.buttons["Restore purchases"].exists || offlineState)
+
         app.buttons["Close paywall"].tap()
     }
 

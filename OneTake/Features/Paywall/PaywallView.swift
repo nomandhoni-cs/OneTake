@@ -32,7 +32,10 @@ struct PaywallView: View {
                     ContentUnavailableView {
                         Label("Plans unavailable", systemImage: "wifi.exclamationmark")
                     } description: {
-                        Text("Check your connection and try again.")
+                        // Prefer the mapped reason — `.productsUnavailable` means the
+                        // store returned no products, which no amount of retrying
+                        // over a working connection will fix.
+                        Text(pro.lastError?.errorDescription ?? String(localized: "Check your connection and try again."))
                     } actions: {
                         Button("Retry") { Task { await pro.refresh() } }
                             .buttonStyle(.borderedProminent)
@@ -42,7 +45,8 @@ struct PaywallView: View {
                     continueButton
                     restoreButton
                 }
-                if let error = pro.lastError {
+                // The empty state already carries the reason — don't say it twice.
+                if let error = pro.lastError, !pro.packages.isEmpty {
                     Text(error.localizedDescription)
                         .font(.footnote)
                         .foregroundStyle(.red)

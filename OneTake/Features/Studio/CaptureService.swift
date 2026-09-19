@@ -75,6 +75,16 @@ final class CaptureService: NSObject {
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async {
                 self.session.beginConfiguration()
+                // Stays `.high` here on purpose. Assigning `device.activeFormat`
+                // below flips the session to `.inputPriority` on its own
+                // ("when a client sets the active format on a device, the
+                // associated session's sessionPreset automatically changes to
+                // AVCaptureSessionPresetInputPriority" — AVCaptureSession.h),
+                // which is what lets a hand-picked 4K format survive. Pinning
+                // `.inputPriority` up front instead would strand any session
+                // that never reaches `applyFormat` — no matching format, or no
+                // camera at all, as on the simulator — with no preset and no
+                // inputs.
                 self.session.sessionPreset = .high
 
                 for input in self.session.inputs {
@@ -88,8 +98,6 @@ final class CaptureService: NSObject {
                 self.videoDevice = device
 
                 if let device {
-                    self.applyFormat(device: device, resolution: resolution, frameRate: frameRate)
-
                     do {
                         let vInput = try AVCaptureDeviceInput(device: device)
                         if self.session.canAddInput(vInput) {
@@ -97,6 +105,15 @@ final class CaptureService: NSObject {
                         }
                     } catch {
                         debugPrint("[Capture] video input failed: \(error)")
+                    }
+
+                    // AFTER `addInput`, never before: adding an input reconfigures the
+                    // device, so both the format and the frame-rate lock only survive
+                    // when applied once the input is already attached.
+                    if !self.applyFormat(device: device, resolution: resolution, frameRate: frameRate) {
+                        // Nothing matched, so `activeFormat` was never assigned and the
+                        // session is still on `.high` — a working fallback, not a stall.
+                        debugPrint("[Capture] no format for \(resolution.rawValue)@\(frameRate.rawValue) — staying on .high")
                     }
                 }
 
@@ -137,7 +154,12 @@ final class CaptureService: NSObject {
         }
     }
 
-    private func applyFormat(device: AVCaptureDevice, resolution: Resolution, frameRate: FrameRate) {
+    /// Applies the requested capture format + frame-rate lock to `device`.
+    /// Returns false when no format matched, so the caller can hand format
+    /// selection back to the session instead of leaving it on a stale default.
+    /// MUST be called after the device's input is added to the session.
+    @discardableResult
+    private func applyFormat(device: AVCaptureDevice, resolution: Resolution, frameRate: FrameRate) -> Bool {
         let targetW = resolution.pixelSize.width
         let targetH = resolution.pixelSize.height
         let formats = device.formats
@@ -170,16 +192,23 @@ final class CaptureService: NSObject {
                 }
             }
         }
-        guard let fmt = best else { return }
+        guard let fmt = best else { return false }
         do {
             try device.lockForConfiguration()
+            // Order matters inside the lock too: assigning `activeFormat` resets the
+            // frame-duration limits to the new format's defaults, so the fps lock has
+            // to follow it.
             device.activeFormat = fmt
             let duration = CMTime(value: 1, timescale: CMTimeScale(frameRate.rawValue))
             device.activeVideoMinFrameDuration = duration
             device.activeVideoMaxFrameDuration = duration
             device.unlockForConfiguration()
+            let applied = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            debugPrint("[Capture] activeFormat \(applied.width)x\(applied.height) @\(frameRate.rawValue)fps")
+            return applied.width == targetW && applied.height == targetH
         } catch {
             debugPrint("[Capture] format lock failed: \(error)")
+            return false
         }
     }
 
@@ -218,22 +247,25 @@ final class CaptureService: NSObject {
         segmentURLs = [url]
         baseRecordingID = UUID()
         isPausedFlag = false
-        // Serial queue preserves order: exposure locks before the file starts.
-        sessionQueue.async { [weak self, movieOutput] in
-            guard let self else { return }
-            if lockExposure {
-                // SessionQueue-confined, but CaptureService is MainActor by default.
-                // Use assumeIsolated to pass MainActor self as delegate from nonisolated queue.
-                MainActor.assumeIsolated { self.lockDeviceExposure() }
-            }
-            MainActor.assumeIsolated {
-                movieOutput.startRecording(to: url, recordingDelegate: self)
-            }
+        // Lock exposure synchronously on the caller's actor, before dispatching.
+        // `MainActor.assumeIsolated` used to wrap this inside `sessionQueue.async`,
+        // but that call is a *precondition* that the current executor is already
+        // the main actor — it never hops. On `com.onetake.session` it tripped
+        // `_dispatch_assert_queue_fail` and crashed every recording start.
+        // Doing the lock here keeps the original ordering (exposure settles
+        // before the file opens) with no isolation claim at all.
+        if lockExposure {
+            lockDeviceExposure()
+        }
+        let delegate: AVCaptureFileOutputRecordingDelegate = self
+        sessionQueue.async { [movieOutput, delegate] in
+            movieOutput.startRecording(to: url, recordingDelegate: delegate)
         }
     }
 
-    /// Session-queue confined: `videoDevice` is only ever touched here and in
-    /// `configure`, so no cross-thread access can occur.
+    /// Called from the caller's actor before recording starts. `videoDevice` is
+    /// written once during `configure`, which every caller awaits first, so the
+    /// read here cannot race that write.
     private func lockDeviceExposure() {
         guard let device = videoDevice else { return }
         do {
@@ -298,9 +330,7 @@ final class CaptureService: NSObject {
         currentOutputURL = segURL
         let delegate: AVCaptureFileOutputRecordingDelegate = self
         sessionQueue.async { [movieOutput, delegate] in
-            MainActor.assumeIsolated {
-                movieOutput.startRecording(to: segURL, recordingDelegate: delegate)
-            }
+            movieOutput.startRecording(to: segURL, recordingDelegate: delegate)
         }
         debugPrint("[Capture] fallback resume — new segment \(segURL.lastPathComponent)")
     }

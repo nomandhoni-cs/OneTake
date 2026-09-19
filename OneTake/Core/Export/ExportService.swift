@@ -110,7 +110,10 @@ final class ExportService {
         let transform = try await videoTrack.load(.preferredTransform)
         let size = naturalSize.applying(transform)
         videoComposition.renderSize = CGSize(width: abs(size.width), height: abs(size.height))
-        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        // `frameDuration` is deliberately left to the `applyingCIFiltersWithHandler`
+        // factory, which derives it from the source asset. An explicit 1/30 here was
+        // redundant and misleading (the export session preserves the source rate
+        // either way — see ExportFrameRateTests).
 
         guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.sessionCreationFailed
@@ -190,7 +193,7 @@ final class ExportService {
         if useLUT {
             videoComposition = try await Self.videoComposition(for: composition, lut: lut)
             videoComposition?.renderSize = renderSize
-            videoComposition?.frameDuration = CMTime(value: 1, timescale: 30)
+            // See above: the factory's asset-derived frameDuration stands on its own.
         }
 
         let preset = useLUT ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough

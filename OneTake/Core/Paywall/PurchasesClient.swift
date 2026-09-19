@@ -52,6 +52,21 @@ struct PaywallPackage: Identifiable, Sendable {
     }
 }
 
+extension PaywallPackage.Kind {
+    /// Maps an offering's package identifier (its dashboard lookup key) to a
+    /// kind, accepting both RevenueCat's reserved `$rc_*` keys and the plain
+    /// names this project's offering uses. `nil` when unrecognised, so the
+    /// caller can fall back to `packageType`.
+    static func fromIdentifier(_ identifier: String) -> PaywallPackage.Kind? {
+        switch identifier.lowercased() {
+        case "annual", "$rc_annual", "yearly": .annual
+        case "monthly", "$rc_monthly": .monthly
+        case "lifetime", "$rc_lifetime": .lifetime
+        default: nil
+        }
+    }
+}
+
 extension PaywallPackage: Hashable {}
 
 /// Trial line copy — pure, unit-tested ("7 days free, then $12.99").
@@ -89,7 +104,12 @@ struct RevenueCatClient: PurchasesClient {
         // The dashboard's current offering is the contract — no ID matching here.
         guard let offering = try await Purchases.shared.offerings().current
         else { throw PaywallError.noOffering }
-        return offering.availablePackages.map(Self.map(_:))
+        // RevenueCat drops packages whose StoreKit product did not resolve, so an
+        // offering with zero available packages means App Store Connect never
+        // returned the products (agreement/metadata), not a network fault.
+        let packages = offering.availablePackages
+        guard !packages.isEmpty else { throw PaywallError.productsUnavailable }
+        return packages.map(Self.map(_:))
     }
 
     func purchase(_ package: PaywallPackage) async throws -> PurchaseOutcome {
@@ -156,7 +176,16 @@ struct RevenueCatClient: PurchasesClient {
     }
 
     private static func kind(for package: Package) -> PaywallPackage.Kind {
-        switch package.packageType {
+        // Identifier first. RevenueCat reports `packageType == .custom` whenever a
+        // package's store duration doesn't match one of its canned durations, and
+        // logs "has a custom duration … reference this package by its identifier".
+        // Our offering hits exactly that, so trusting `packageType` alone mapped
+        // every subscription to `.other` — which dropped the trial copy and made
+        // the wall pre-select Lifetime instead of Annual.
+        if let known = PaywallPackage.Kind.fromIdentifier(package.identifier) {
+            return known
+        }
+        return switch package.packageType {
         case .annual: .annual
         case .monthly: .monthly
         case .lifetime: .lifetime
@@ -181,6 +210,7 @@ private extension PaywallPeriodUnit {
 enum PaywallError: LocalizedError, Equatable {
     case notConfigured
     case noOffering
+    case productsUnavailable
     case network
     case storeUnavailable
     case generic
@@ -191,6 +221,8 @@ enum PaywallError: LocalizedError, Equatable {
             "Purchases aren't set up yet. Please update the app and try again."
         case .noOffering:
             "Plans couldn't be loaded. Check your connection and try again."
+        case .productsUnavailable:
+            "Plans aren't available from the App Store on this device yet. Please try again later."
         case .network:
             "No connection. Check your connection and try again."
         case .storeUnavailable:

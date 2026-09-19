@@ -55,7 +55,6 @@ struct TermsView: View {
             .padding(.vertical, 16)
             .padding(.bottom, 8)
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle("Terms & Privacy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -125,7 +124,6 @@ struct TermsView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle("Terms & Privacy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -136,23 +134,28 @@ struct TermsView: View {
 /// Bottom-sheet kind — also used by onboarding's fixed bottom bar.
 enum LegalSheetKind: String, Identifiable {
     case terms, privacy
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
+
     var title: String {
         switch self {
-        case .terms: return "Terms of Service"
-        case .privacy: return "Privacy Policy"
+        case .terms: "Terms of Service"
+        case .privacy: "Privacy Policy"
         }
     }
+
     var markdown: String {
         switch self {
-        case .terms: return LegalDocuments.bundledText(named: "Terms")
-        case .privacy: return LegalDocuments.bundledText(named: "Privacy")
+        case .terms: LegalDocuments.bundledText(named: "Terms")
+        case .privacy: LegalDocuments.bundledText(named: "Privacy")
         }
     }
+
     var url: URL? {
         switch self {
-        case .terms: return LegalDocuments.termsURL
-        case .privacy: return LegalDocuments.privacyURL
+        case .terms: LegalDocuments.termsURL
+        case .privacy: LegalDocuments.privacyURL
         }
     }
 }
@@ -184,7 +187,7 @@ struct LegalDocumentCard: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
@@ -223,7 +226,7 @@ struct LegalPreviewCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.06), lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -255,23 +258,25 @@ struct FormattedMarkdownView: View {
         return raw.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 
-    // swiftlint:disable:next avoid_helper_func_view
+    // Region form, not `disable:next`: swiftformat hoists `@ViewBuilder` above
+    // the declaration, which would push a `:next` directive off its target.
+    // swiftlint:disable avoid_helper_func_view
+    @ViewBuilder
     private func blockView(_ raw: String) -> some View {
-        Group {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("# ") {
-                let content = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                inlineText(content, font: .title3.weight(.bold), color: .primary)
-            } else if trimmed.hasPrefix("## ") {
-                let content = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                inlineText(content, font: .headline, color: .primary)
-                    .padding(.top, 4)
-            } else if trimmed.hasPrefix("### ") {
-                let content = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-                inlineText(content, font: .subheadline.weight(.semibold), color: .primary)
-                    .padding(.top, 2)
-            } else if trimmed.hasPrefix("---") || trimmed.hasPrefix("***") || trimmed.hasPrefix("___") {
-                Divider().padding(.vertical, 4)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("# ") {
+            let content = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            inlineText(content, font: .title3.weight(.bold), color: .primary)
+        } else if trimmed.hasPrefix("## ") {
+            let content = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            inlineText(content, font: .headline, color: .primary)
+                .padding(.top, 4)
+        } else if trimmed.hasPrefix("### ") {
+            let content = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+            inlineText(content, font: .subheadline.weight(.semibold), color: .primary)
+                .padding(.top, 2)
+        } else if trimmed.hasPrefix("---") || trimmed.hasPrefix("***") || trimmed.hasPrefix("___") {
+            Divider().padding(.vertical, 4)
         } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
             bulletGroup(trimmed)
         } else if isNumberedList(trimmed) {
@@ -282,13 +287,11 @@ struct FormattedMarkdownView: View {
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) { Capsule().fill(Color.primary.opacity(0.15)).frame(width: 3) }
                 .padding(.leading, 2)
-            } else {
-                inlineText(trimmed, font: .body, color: Color.primary.opacity(0.88))
-            }
+        } else {
+            inlineText(trimmed, font: .body, color: Color.primary.opacity(0.88))
         }
     }
 
-    // swiftlint:disable:next avoid_helper_func_view
     private func bulletGroup(_ raw: String) -> some View {
         let lines = raw.components(separatedBy: "\n")
         return VStack(alignment: .leading, spacing: 8) {
@@ -310,13 +313,18 @@ struct FormattedMarkdownView: View {
     }
 
     private func strippedBullet(_ t: String) -> String {
-        if t.hasPrefix("- ") { return String(t.dropFirst(2)) }
-        if t.hasPrefix("* ") { return String(t.dropFirst(2)) }
-        if t.hasPrefix("• ") { return String(t.dropFirst(2)) }
+        if t.hasPrefix("- ") {
+            return String(t.dropFirst(2))
+        }
+        if t.hasPrefix("* ") {
+            return String(t.dropFirst(2))
+        }
+        if t.hasPrefix("• ") {
+            return String(t.dropFirst(2))
+        }
         return t
     }
 
-    // swiftlint:disable:next avoid_helper_func_view
     private func numberedGroup(_ raw: String) -> some View {
         let lines = raw.components(separatedBy: "\n")
         return VStack(alignment: .leading, spacing: 8) {
@@ -343,7 +351,6 @@ struct FormattedMarkdownView: View {
         return t.contains(". ")
     }
 
-    // swiftlint:disable:next avoid_helper_func_view
     private func inlineText(_ string: String, font: Font, color: Color) -> some View {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         if let attr = try? AttributedString(
@@ -355,6 +362,7 @@ struct FormattedMarkdownView: View {
             return Text(trimmed).font(font).foregroundStyle(color).lineSpacing(2)
         }
     }
+    // swiftlint:enable avoid_helper_func_view
 }
 
 /// Bottom sheet reader — medium + large detents, drag indicator, polished markdown.
@@ -386,7 +394,6 @@ struct LegalSheetContent: View {
                 .padding(20)
                 .padding(.bottom, 12)
             }
-            .background(Color(.systemGroupedBackground))
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -426,7 +433,7 @@ struct LegalSummaryCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.06), lineWidth: 1))
         .accessibilityLabel(
             "Summary: private by design, your videos are yours, Pro plans with trial, restore on any device, full text available."
