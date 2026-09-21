@@ -46,6 +46,37 @@ struct PaywallTests {
         #expect(service.isPro)
     }
 
+    /// Regression: `refresh()` must apply the entitlement and the package list
+    /// independently. Folded into one tuple await, a store hiccup during the
+    /// post-purchase refresh swallowed the unlock and reported failure on a
+    /// purchase the user had already paid for.
+    @Test func packageLoadFailureStillUnlocksAPaidPurchase() async {
+        let mock = MockPurchasesClient(packages: PreviewPaywallPackages.all)
+        let service = Self.service(client: mock)
+        await service.refresh()
+        #expect(!service.isPro)
+
+        // The store goes flaky exactly as the purchase lands.
+        mock.loadPackagesError = .network
+        #expect(await service.purchaseSelected())
+        #expect(service.isPro) // entitlement survives the failed package load
+        #expect(service.lastError == .network) // ...and the failure is still reported
+    }
+
+    /// The same split protects a plain refresh: a dead offering must not reset
+    /// a Pro user to locked.
+    @Test func packageLoadFailureKeepsExistingProStatus() async {
+        let mock = MockPurchasesClient(packages: PreviewPaywallPackages.all, pro: true)
+        let service = Self.service(client: mock)
+        await service.refresh()
+        #expect(service.isPro)
+
+        mock.loadPackagesError = .productsUnavailable
+        await service.refresh()
+        #expect(service.isPro)
+        #expect(service.lastError == .productsUnavailable)
+    }
+
     @Test func userCancelledStaysSilentNonPro() async {
         let service = Self.service(purchaseResult: .cancelled)
         await service.refresh()
@@ -90,6 +121,22 @@ struct PaywallTests {
         #expect(PaywallCopy
             .trialLine(for: TrialInfo(periodValue: 1, periodUnit: .month, priceString: "$1.99/mo")) == "1 month free, then $1.99/mo")
         #expect(PaywallCopy.trialLine(for: nil) == nil) // no offer → no line, no lie
+    }
+
+    /// Regression: the live offering uses plain lookup keys ("annual" etc.),
+    /// which RevenueCat reports as `packageType == .custom`. Resolving by
+    /// identifier is what keeps the trial copy and the Annual default working.
+    @Test func packageKindResolvesFromIdentifier() {
+        #expect(PaywallPackage.Kind.fromIdentifier("annual") == .annual)
+        #expect(PaywallPackage.Kind.fromIdentifier("monthly") == .monthly)
+        #expect(PaywallPackage.Kind.fromIdentifier("lifetime") == .lifetime)
+        // RevenueCat's reserved keys resolve too.
+        #expect(PaywallPackage.Kind.fromIdentifier("$rc_annual") == .annual)
+        #expect(PaywallPackage.Kind.fromIdentifier("$rc_monthly") == .monthly)
+        #expect(PaywallPackage.Kind.fromIdentifier("$rc_lifetime") == .lifetime)
+        // Case-insensitive, and unknown keys defer to `packageType`.
+        #expect(PaywallPackage.Kind.fromIdentifier("ANNUAL") == .annual)
+        #expect(PaywallPackage.Kind.fromIdentifier("six_month") == nil)
     }
 
     @Test func errorMapping() {

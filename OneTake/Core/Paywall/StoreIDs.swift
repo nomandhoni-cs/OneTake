@@ -9,7 +9,7 @@
 //
 import Foundation
 
-// RevenueCat PUBLIC key is set — see docs/STORE_SETUP.md for dashboard wiring.
+/// RevenueCat PUBLIC key is set — see docs/STORE_SETUP.md for dashboard wiring.
 enum StoreIDs {
     /// RevenueCat PUBLIC api key (`appl_…`). Safe to ship in-client by design.
     static let revenueCatAPIKey = "appl_LevidngozNUcJqwVJdbbzjAyWgw"

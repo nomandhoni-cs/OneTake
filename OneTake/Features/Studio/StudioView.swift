@@ -195,6 +195,17 @@ struct StudioView: View {
                 studioContent
                     .navigationTitle(isPaused ? "Paused" : (isRecording ? "● REC \(format(seconds: elapsedSeconds))" : "Studio"))
                     .navigationBarTitleDisplayMode(.inline)
+                    // Same bar treatment as the fullscreen branch, and not
+                    // optional: the camera already ignores the safe area, so an
+                    // opaque bar both crops the viewfinder and puts the white
+                    // `ScriptSelectorView` glyphs on a white background, where
+                    // they vanish. This is the path both tabs actually use.
+                    .toolbarBackground(.hidden, for: .navigationBar)
+                    .toolbarColorScheme(.dark, for: .navigationBar)
+                    // The tab bar would otherwise sit on the viewfinder's bottom
+                    // edge. The Studio tab avoids this by presenting full screen;
+                    // this branch is pushed inside a tab, so it hides it itself.
+                    .toolbar(.hidden, for: .tabBar)
                     .toolbar {
                         ToolbarItem(placement: .principal) {
                             ScriptSelectorView(selectedID: $selectedScriptID)

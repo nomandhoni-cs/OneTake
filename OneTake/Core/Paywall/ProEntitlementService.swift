@@ -70,18 +70,30 @@ final class ProEntitlementService {
         defer { isLoadingPackages = false }
         async let loadedPackages = client.loadPackages()
         async let pro = client.currentProStatus()
+        // The two results are applied independently, never as one tuple: a
+        // package-load failure must not discard a known-good entitlement.
+        // Folded together, a network blip right after a successful purchase
+        // would skip `apply(pro:)`, leave `isPro` false, and make
+        // `purchaseSelected()` report failure on a purchase the user paid for.
+        var failure: PaywallError?
         do {
-            let (fetched, isProNow) = try await (loadedPackages, pro)
+            try await apply(pro: pro)
+        } catch {
+            failure = error as? PaywallError ?? PaywallError.map(error)
+        }
+        do {
+            let fetched = try await loadedPackages
             packages = fetched
             if selectedPackageID == nil {
                 // Default to annual (carries the trial) when present.
                 selectedPackageID = fetched.first { $0.kind == .annual }?.id ?? fetched.first?.id
             }
-            apply(pro: isProNow)
-            lastError = nil
         } catch {
-            lastError = error as? PaywallError ?? PaywallError.map(error)
+            // Reported last so the paywall surfaces the package error, which is
+            // the one the user can act on.
+            failure = error as? PaywallError ?? PaywallError.map(error)
         }
+        lastError = failure
     }
 
     func select(_ package: PaywallPackage) {
@@ -192,6 +204,9 @@ final class MockPurchasesClient: PurchasesClient, @unchecked Sendable {
     var pro: Bool
     var purchaseResult: PurchaseOutcome
     var error: PaywallError?
+    /// Fails `loadPackages` alone, leaving entitlement reads healthy — models a
+    /// store hiccup during an otherwise good session.
+    var loadPackagesError: PaywallError?
 
     init(
         packages: [PaywallPackage] = [],
@@ -206,6 +221,9 @@ final class MockPurchasesClient: PurchasesClient, @unchecked Sendable {
     }
 
     func loadPackages() async throws -> [PaywallPackage] {
+        if let loadPackagesError {
+            throw loadPackagesError
+        }
         if let error {
             throw error
         }

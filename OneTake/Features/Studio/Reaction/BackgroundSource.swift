@@ -161,11 +161,11 @@ final class BackgroundSource {
     /// iOS 18.6 — uses `load(.hasProtectedContent)` / `load(.isPlayable)` per latest docs.
     static func validateVideo(url: URL) async throws {
         let asset = AVURLAsset(url: url)
-        let hasProtected = (try? await asset.load(.hasProtectedContent)) ?? false
+        let hasProtected = await (try? asset.load(.hasProtectedContent)) ?? false
         if hasProtected {
             throw BackgroundSourceError.protectedContent
         }
-        let playable = (try? await asset.load(.isPlayable)) ?? false
+        let playable = await (try? asset.load(.isPlayable)) ?? false
         if !playable {
             throw BackgroundSourceError.unreadable
         }

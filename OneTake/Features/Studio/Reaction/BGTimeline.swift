@@ -84,19 +84,29 @@ final class BGTimeline {
         guard let track = asset.legacyTracks(withMediaType: .video).first,
               let reader = try? AVAssetReader(asset: asset)
         else {
-            self.reader = nil
+            reader = nil
             output = nil
             return
         }
         let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ])
-        guard reader.canAdd(out), reader.startReading() else {
+        // Outputs MUST be attached before reading starts: `addOutput` on a
+        // started reader raises an exception, and a reader started with no
+        // outputs has nothing to hand back. Previously `startReading()` ran
+        // inside the same guard as `canAdd`, so `add(out)` always landed too
+        // late and any video background crashed the export.
+        guard reader.canAdd(out) else {
             self.reader = nil
             output = nil
             return
         }
         reader.add(out)
+        guard reader.startReading() else {
+            self.reader = nil
+            output = nil
+            return
+        }
         self.reader = reader
         output = out
     }
