@@ -20,6 +20,17 @@ enum PaywallPeriodUnit: String, Sendable {
         let unit = value == 1 ? rawValue : rawValue + "s"
         return "\(value) \(unit)"
     }
+
+    /// Short suffix for price lines ("$12.99/yr") — App Review's
+    /// auto-renewable-subscription checklist wants length shown with price.
+    var abbreviation: String {
+        switch self {
+        case .day: "day"
+        case .week: "wk"
+        case .month: "mo"
+        case .year: "yr"
+        }
+    }
 }
 
 /// Free-trial terms derived from the store discount object.
@@ -156,11 +167,18 @@ struct RevenueCatClient: PurchasesClient {
         return PaywallPackage(
             id: package.identifier,
             title: product.localizedTitle,
-            priceString: product.localizedPriceString,
+            priceString: priceString(for: product),
             trial: trialInfo(for: product),
             kind: kind(for: package),
             rcPackage: package
         )
+    }
+
+    /// Appends the renewal period to the price ("$12.99/yr") for
+    /// subscriptions; one-time purchases (lifetime) stay a bare price.
+    private static func priceString(for product: StoreProduct) -> String {
+        guard let period = product.subscriptionPeriod else { return product.localizedPriceString }
+        return "\(product.localizedPriceString)/\(PaywallPeriodUnit(period.unit).abbreviation)"
     }
 
     /// Free-trial terms from the store discount object — nil without a trial.
@@ -171,7 +189,7 @@ struct RevenueCatClient: PurchasesClient {
         return TrialInfo(
             periodValue: discount.subscriptionPeriod.value,
             periodUnit: PaywallPeriodUnit(discount.subscriptionPeriod.unit),
-            priceString: product.localizedPriceString
+            priceString: priceString(for: product)
         )
     }
 
