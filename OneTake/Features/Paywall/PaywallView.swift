@@ -196,9 +196,9 @@ struct PaywallView: View {
                 // Always visible per Guideline 3.1.2 — external URL when set,
                 // otherwise bundled sheet fallback (still passes Review).
                 if let terms = LegalDocuments.termsURL {
-                    Link("Terms of Service", destination: terms).font(.caption)
+                    Link("Terms of Use (EULA)", destination: terms).font(.caption)
                 } else {
-                    Button("Terms of Service") { legalSheet = .terms }.font(.caption)
+                    Button("Terms of Use (EULA)") { legalSheet = .terms }.font(.caption)
                 }
                 if let privacy = LegalDocuments.privacyURL {
                     Link("Privacy Policy", destination: privacy).font(.caption)
