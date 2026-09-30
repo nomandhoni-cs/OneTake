@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/logo.svg" alt="OneTake app icon" width="128" height="128"></p>
+
 # OneTake
 
 **One-take teleprompter + camera for iOS — scripts, prompter, takes, trim & LUT, all offline.**
