@@ -6,6 +6,14 @@ OneTake lets creators write scripts, read them from a scrolling prompter while t
 
 ![Platform](https://img.shields.io/badge/platform-iOS%2018.6%2B-lightgrey) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![SwiftUI](https://img.shields.io/badge/SwiftUI-Observation-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Download
+
+<a href="https://apps.apple.com/us/app/onetake-teleprompter-studio/id6809885525"><img src="https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white" alt="Download OneTake on the App Store" height="40"></a>
+
+**[OneTake: Teleprompter Studio on the App Store](https://apps.apple.com/us/app/onetake-teleprompter-studio/id6809885525)**. Scan with your iPhone camera:
+
+<a href="https://apps.apple.com/us/app/onetake-teleprompter-studio/id6809885525"><img src="docs/images/appstore-qr.svg" alt="QR code linking to OneTake on the App Store" width="180"></a>
+
 ## Features
 
 - **Scripts** — SwiftData-backed library, search, duplicate, category grouping, sort (Updated/Created/Title), context-menu Move to Category
@@ -59,4 +67,4 @@ See `docs/GETTING_STARTED.md` for detailed setup, `docs/ARCHITECTURE.md` for the
 
 ## License
 
-MIT — see `LICENSE` if present. App icon via Xcode Icon Composer (`OneTake/Resources/logo.icon`).
+Code is MIT licensed, see [`LICENSE`](LICENSE). The **OneTake** name, logo and app icon (`OneTake/Resources/logo.icon`) are not covered by the license and may not be used to publish a copy of the app.
