@@ -16,6 +16,18 @@ OneTake lets creators write scripts, read them from a scrolling prompter while t
 
 <a href="https://apps.apple.com/us/app/onetake-teleprompter-studio/id6809885525"><img src="docs/images/appstore-qr.svg" alt="QR code linking to OneTake on the App Store" width="180"></a>
 
+## Screenshots
+
+| ① Write | ② Record | ③ Tune the prompter |
+|:---:|:---:|:---:|
+| <img src="docs/images/screenshots/scripts.png" alt="Script library grouped by category" width="240"> | <img src="docs/images/screenshots/studio.png" alt="Studio tab with Teleprompter and Reaction modes" width="240"> | <img src="docs/images/screenshots/prompter-settings.png" alt="Camera and teleprompter settings: speed, font size, backdrop" width="240"> |
+| Scripts grouped by category, with search and filters | Pick **Teleprompter** or **Reaction** (auto cut-out) | Camera, speed, font size and backdrop |
+
+| ④ Trim & split | ⑤ Color grade | ⑥ OneTake Pro | ⑦ Private by design |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/images/screenshots/review-trim.png" alt="Review screen with trim handles and blade timeline" width="190"> | <img src="docs/images/screenshots/review-luts.png" alt="LUT picker with ten rendered color-grade swatches" width="190"> | <img src="docs/images/screenshots/paywall.png" alt="OneTake Pro paywall: annual with 7-day trial, monthly, lifetime" width="190"> | <img src="docs/images/screenshots/privacy.png" alt="Onboarding screen explaining on-device privacy" width="190"> |
+| Dual-handle trim and blade timeline | 10 built-in LUTs with live swatches | 7-day trial · Annual · Monthly · Lifetime (RevenueCat) | No account, no cloud, permissions asked in context |
+
 ## Features
 
 - **Scripts** — SwiftData-backed library, search, duplicate, category grouping, sort (Updated/Created/Title), context-menu Move to Category
