@@ -33,42 +33,45 @@ struct PrompterView: View {
 
                 let content = scriptContent(width: geo.size.width)
 
-                ZStack(alignment: .top) {
-                    // Frosted glass backdrop
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.55 + opacity * 0.45)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.18), lineWidth: 1)
-                        )
-                        // Eye-line accent
-                        .overlay(alignment: .top) {
-                            Rectangle()
-                                .fill(Color.white.opacity(0.55))
-                                .frame(height: 2)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 10)
-                        }
-
-                    // Scrolling text
-                    content
-                        .offset(y: offsetY)
-                        .animation(nil, value: offsetY)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .onAppear { lastDate = now }
-                .onChange(of: now) { _, new in
-                    guard isScrolling else { lastDate = new; return }
-                    offsetY -= pointsPerSecond * delta
-                    // Reset when scrolled past
-                    // Approximate: reset when offsetY < -estimatedHeight
-                    lastDate = new
-                }
-                .onChange(of: isScrolling) { _, scrolling in
-                    if !scrolling {
-                        lastDate = now
+                // Frosted glass backdrop pinned to the prompter frame; the script
+                // rides in a top-aligned overlay at its full natural height (never
+                // squeezed to the frame, which truncated it with "…") and is
+                // clipped by the backdrop so scrolling reveals every line.
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.55 + opacity * 0.45)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .overlay(alignment: .top) {
+                        content
+                            .fixedSize(horizontal: false, vertical: true)
+                            .offset(y: offsetY)
+                            .animation(nil, value: offsetY)
                     }
-                }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                    )
+                    // Eye-line accent
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.55))
+                            .frame(height: 2)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .onAppear { lastDate = now }
+                    .onChange(of: now) { _, new in
+                        guard isScrolling else { lastDate = new; return }
+                        offsetY -= pointsPerSecond * delta
+                        // Reset when scrolled past
+                        // Approximate: reset when offsetY < -estimatedHeight
+                        lastDate = new
+                    }
+                    .onChange(of: isScrolling) { _, scrolling in
+                        if !scrolling {
+                            lastDate = now
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity)
